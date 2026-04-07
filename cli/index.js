@@ -1,40 +1,34 @@
 #!/usr/bin/env node
 
-import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken } from "./config.js";
+import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
-import { login } from "./auth.js";
+import { login, getToken } from "./auth.js";
 import { registerHooks, unregisterHooks, hooksRegistered } from "./hooks.js";
 import { sync } from "./sync.js";
 
 const command = process.argv[2];
 
+// Commands that don't require authentication
+const PUBLIC_COMMANDS = new Set(["login", "uninstall", undefined]);
+
+if (!PUBLIC_COMMANDS.has(command)) {
+  const token = readToken();
+  if (!token?.token || !token?.email) {
+    console.error("Not logged in. Run `agent-logs login` first.");
+    process.exit(1);
+  }
+}
+
 switch (command) {
   case "login": {
     console.log("Logging in to agent-logs...");
     try {
-      const token = await login();
-      console.log(`Authenticated as: ${token.email}`);
-
-      // Verify the email is on the allowlist
-      const { getIdToken } = await import("./auth.js");
-      const idToken = await getIdToken();
-      const resp = await fetch(`${INGESTION_URL}/check-auth`, {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        console.error(`\n${body.error || "Your email is not authorized."}`);
-        console.error("\nLogin saved but syncing will not work until your email is authorized.");
-        // Still save the token so they can re-check later without re-logging in
-        const projects = readProjects();
-        projects.student_id = token.email;
-        writeProjects(projects);
-        process.exit(1);
-      }
+      const result = await login();
+      console.log(`Authenticated as: ${result.email}`);
 
       // Initialize projects config
       const projects = readProjects();
-      projects.student_id = token.email;
+      projects.student_id = result.email;
       writeProjects(projects);
 
       // Register Claude Code hooks
@@ -42,7 +36,7 @@ switch (command) {
       console.log("Claude Code hooks registered.");
       console.log("Setup complete. Use `agent-logs consent` in a project directory to start sharing.");
     } catch (err) {
-      console.error("Login failed:", err.message);
+      console.error(`Login failed: ${err.message}`);
       process.exit(1);
     }
     break;
@@ -51,13 +45,7 @@ switch (command) {
   case "consent": {
     const cwd = process.cwd();
     const projects = readProjects();
-    if (!projects.student_id) {
-      console.error("Not logged in. Run `agent-logs login` first.");
-      process.exit(1);
-    }
-    // Remove from withdrawn if present
     projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
-    // Add to shared if not already
     if (!projects.shared.includes(cwd)) {
       projects.shared.push(cwd);
     }
@@ -69,13 +57,7 @@ switch (command) {
   case "withdraw": {
     const cwd = process.cwd();
     const projects = readProjects();
-    if (!projects.student_id) {
-      console.error("Not logged in. Run `agent-logs login` first.");
-      process.exit(1);
-    }
-    // Remove from shared
     projects.shared = projects.shared.filter((p) => p !== cwd);
-    // Add to withdrawn if not already
     if (!projects.withdrawn.includes(cwd)) {
       projects.withdrawn.push(cwd);
     }
@@ -85,12 +67,21 @@ switch (command) {
     break;
   }
 
+  case "logout": {
+    const token = readToken();
+    if (!token?.email) {
+      console.log("Not logged in.");
+      break;
+    }
+    writeToken({});
+    console.log(`Logged out. Hooks are still registered — sync will fail until you log in again.`);
+    break;
+  }
+
   case "consent-check": {
-    // Called by SessionStart hook. Reads stdin for hook JSON, outputs status message.
     const projects = readProjects();
     const cwd = process.cwd();
 
-    // Try to read cwd from hook input (stdin)
     let hookCwd = cwd;
     try {
       let input = "";
@@ -145,14 +136,8 @@ switch (command) {
       console.log("Last sync: never");
     }
 
-    // Check server reachability
     try {
-      const { getIdToken } = await import("./auth.js");
-      const idToken = await getIdToken();
-      const resp = await fetch(`${INGESTION_URL}/health`, {
-        signal: AbortSignal.timeout(5000),
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
+      const resp = await fetch(`${INGESTION_URL}/health`, { signal: AbortSignal.timeout(5000) });
       const body = await resp.json();
       console.log(`Server:   ${INGESTION_URL} — ${body.status}`);
     } catch (err) {
@@ -162,13 +147,12 @@ switch (command) {
   }
 
   case "admin": {
-    const { getIdToken } = await import("./auth.js");
     const subcommand = process.argv[3];
     const arg = process.argv[4];
 
-    let idToken;
+    let token;
     try {
-      idToken = await getIdToken();
+      token = getToken();
     } catch (err) {
       console.error("Auth failed:", err.message);
       process.exit(1);
@@ -179,7 +163,7 @@ switch (command) {
         method,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
+          Authorization: `Bearer ${token}`,
         },
         body: body ? JSON.stringify(body) : undefined,
       });
@@ -245,11 +229,9 @@ Commands:
     const { join } = await import("path");
     const { homedir } = await import("os");
 
-    // Remove hooks from Claude Code
     unregisterHooks();
     console.log("Claude Code hooks removed.");
 
-    // Remove config directory
     const configDir = join(homedir(), ".config", "agent-logs");
     try {
       rmSync(configDir, { recursive: true });
@@ -258,7 +240,6 @@ Commands:
       console.log(`${configDir} already removed.`);
     }
 
-    // Remove launcher script
     const launcher = join(homedir(), ".local", "bin", "agent-logs");
     try {
       rmSync(launcher);
@@ -275,7 +256,8 @@ Commands:
     console.log(`Usage: agent-logs <command>
 
 Commands:
-  login          Authenticate and register Claude Code hooks
+  login          Authenticate via email verification code
+  logout         Clear stored credentials
   consent        Start sharing logs for the current project directory
   withdraw       Stop sharing logs for the current project directory
   doctor         Check configuration and connectivity

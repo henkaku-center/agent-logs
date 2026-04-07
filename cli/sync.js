@@ -3,7 +3,7 @@ import { join, relative } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
 import { readProjects, readCursors, writeCursors, readToken, writeLastSync } from "./config.js";
-import { getIdToken } from "./auth.js";
+import { getToken } from "./auth.js";
 
 const CLAUDE_DIR = join(homedir(), ".claude", "projects");
 import { INGESTION_URL } from "./constants.js";
@@ -104,9 +104,9 @@ export async function sync() {
     return;
   }
 
-  let idToken;
+  let token;
   try {
-    idToken = await getIdToken();
+    token = getToken();
   } catch (err) {
     writeLastSync({ status: "error", error: `Auth failed: ${err.message}` });
     return;
@@ -190,7 +190,7 @@ export async function sync() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             project_path: projectPath,
