@@ -144,6 +144,85 @@ switch (command) {
     break;
   }
 
+  case "admin": {
+    const { getIdToken } = await import("./auth.js");
+    const subcommand = process.argv[3];
+    const arg = process.argv[4];
+
+    let idToken;
+    try {
+      idToken = await getIdToken();
+    } catch (err) {
+      console.error("Auth failed:", err.message);
+      process.exit(1);
+    }
+
+    const adminFetch = async (path, method = "GET", body) => {
+      const resp = await fetch(`${INGESTION_URL}${path}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        console.error(`Error: ${data.error}`);
+        process.exit(1);
+      }
+      return data;
+    };
+
+    switch (subcommand) {
+      case "list": {
+        const data = await adminFetch("/admin/allowlist");
+        console.log("Allowed domains:");
+        for (const d of data.domains) console.log(`  @${d}`);
+        console.log("\nAllowed emails:");
+        for (const e of data.emails) console.log(`  ${e}`);
+        if (data.domains.length === 0 && data.emails.length === 0) {
+          console.log("  (none — no students can sync)");
+        }
+        break;
+      }
+      case "add-domain": {
+        if (!arg) { console.error("Usage: agent-logs admin add-domain <domain>"); process.exit(1); }
+        const data = await adminFetch("/admin/allowlist/domain", "POST", { domain: arg });
+        console.log(`Added @${arg}. Domains: ${data.domains.map(d => "@" + d).join(", ")}`);
+        break;
+      }
+      case "remove-domain": {
+        if (!arg) { console.error("Usage: agent-logs admin remove-domain <domain>"); process.exit(1); }
+        const data = await adminFetch("/admin/allowlist/domain", "DELETE", { domain: arg });
+        console.log(`Removed @${arg}. Domains: ${data.domains.map(d => "@" + d).join(", ")}`);
+        break;
+      }
+      case "add-email": {
+        if (!arg) { console.error("Usage: agent-logs admin add-email <email>"); process.exit(1); }
+        const data = await adminFetch("/admin/allowlist/email", "POST", { allow_email: arg });
+        console.log(`Added ${arg}. Emails: ${data.emails.join(", ")}`);
+        break;
+      }
+      case "remove-email": {
+        if (!arg) { console.error("Usage: agent-logs admin remove-email <email>"); process.exit(1); }
+        const data = await adminFetch("/admin/allowlist/email", "DELETE", { allow_email: arg });
+        console.log(`Removed ${arg}. Emails: ${data.emails.join(", ")}`);
+        break;
+      }
+      default:
+        console.log(`Usage: agent-logs admin <command>
+
+Commands:
+  list                     Show allowed domains and emails
+  add-domain <domain>      Allow all emails from a domain
+  remove-domain <domain>   Remove a domain
+  add-email <email>        Allow a specific email address
+  remove-email <email>     Remove a specific email address`);
+    }
+    break;
+  }
+
   case "uninstall": {
     const { rmSync } = await import("fs");
     const { join } = await import("path");

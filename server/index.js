@@ -14,10 +14,40 @@ const PROJECT_ID = process.env.GCP_PROJECT || "agent-logging";
 const DATASET = "course";
 const TABLE = "logs";
 
-/** Allowed email domains. Only students with these domains can sync logs. */
-const ALLOWED_DOMAINS = (process.env.ALLOWED_DOMAINS || "chibatech.dev,henkaku.center,chibatech.ac.jp")
+/** Admin emails that can manage the allowlist */
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "grisha@henkaku.center")
   .split(",")
-  .map((d) => d.trim().toLowerCase());
+  .map((e) => e.trim().toLowerCase());
+
+/**
+ * Check if an email is authorized to sync.
+ * Checks Firestore allowlist: allowed_domains and allowed_emails collections.
+ */
+async function isAuthorized(email) {
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return false;
+
+  // Check domain allowlist
+  const domainDoc = await firestore.doc(`allowlist/domains`).get();
+  if (domainDoc.exists) {
+    const domains = domainDoc.data().list || [];
+    if (domains.includes(domain)) return true;
+  }
+
+  // Check individual email allowlist
+  const emailDoc = await firestore.doc(`allowlist/emails`).get();
+  if (emailDoc.exists) {
+    const emails = emailDoc.data().list || [];
+    if (emails.includes(email.toLowerCase())) return true;
+  }
+
+  return false;
+}
+
+/** Check if the authenticated user is an admin */
+function isAdmin(email) {
+  return ADMIN_EMAILS.includes(email.toLowerCase());
+}
 
 /**
  * Verify caller identity.
@@ -67,10 +97,11 @@ app.post("/ingest", async (req, res) => {
     return res.status(401).json({ error: err.message });
   }
 
-  // Check domain allowlist
-  const domain = studentId.split("@")[1]?.toLowerCase();
-  if (!domain || !ALLOWED_DOMAINS.includes(domain)) {
-    return res.status(403).json({ error: `Domain @${domain} is not authorized` });
+  // Check allowlist
+  if (!(await isAuthorized(studentId))) {
+    return res.status(403).json({
+      error: `${studentId} is not authorized. Use the same email as your Claude Enterprise account, or contact claude@chibatech.dev to be added.`,
+    });
   }
 
   const { project_path, session_id, file_name, offset, lines } = req.body;
@@ -183,6 +214,106 @@ app.post("/ingest", async (req, res) => {
     console.error("Ingest error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
+});
+
+/* ── Admin endpoints ── */
+
+/** GET /admin/allowlist — list all allowed domains and emails */
+app.get("/admin/allowlist", async (req, res) => {
+  let email;
+  try { email = await authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const domainDoc = await firestore.doc("allowlist/domains").get();
+  const emailDoc = await firestore.doc("allowlist/emails").get();
+  res.json({
+    domains: domainDoc.exists ? domainDoc.data().list : [],
+    emails: emailDoc.exists ? emailDoc.data().list : [],
+  });
+});
+
+/** POST /admin/allowlist/domain — add a domain */
+app.post("/admin/allowlist/domain", async (req, res) => {
+  let email;
+  try { email = await authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const { domain } = req.body;
+  if (!domain) return res.status(400).json({ error: "Missing domain" });
+
+  const ref = firestore.doc("allowlist/domains");
+  const doc = await ref.get();
+  const list = doc.exists ? doc.data().list : [];
+  const normalized = domain.toLowerCase().trim();
+  if (!list.includes(normalized)) {
+    list.push(normalized);
+    await ref.set({ list });
+  }
+  res.json({ status: "ok", domains: list });
+});
+
+/** DELETE /admin/allowlist/domain — remove a domain */
+app.delete("/admin/allowlist/domain", async (req, res) => {
+  let email;
+  try { email = await authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const { domain } = req.body;
+  if (!domain) return res.status(400).json({ error: "Missing domain" });
+
+  const ref = firestore.doc("allowlist/domains");
+  const doc = await ref.get();
+  if (!doc.exists) return res.json({ status: "ok", domains: [] });
+  const list = doc.data().list.filter((d) => d !== domain.toLowerCase().trim());
+  await ref.set({ list });
+  res.json({ status: "ok", domains: list });
+});
+
+/** POST /admin/allowlist/email — add an individual email */
+app.post("/admin/allowlist/email", async (req, res) => {
+  let email;
+  try { email = await authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const { allow_email } = req.body;
+  if (!allow_email) return res.status(400).json({ error: "Missing allow_email" });
+
+  const ref = firestore.doc("allowlist/emails");
+  const doc = await ref.get();
+  const list = doc.exists ? doc.data().list : [];
+  const normalized = allow_email.toLowerCase().trim();
+  if (!list.includes(normalized)) {
+    list.push(normalized);
+    await ref.set({ list });
+  }
+  res.json({ status: "ok", emails: list });
+});
+
+/** DELETE /admin/allowlist/email — remove an individual email */
+app.delete("/admin/allowlist/email", async (req, res) => {
+  let email;
+  try { email = await authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const { allow_email } = req.body;
+  if (!allow_email) return res.status(400).json({ error: "Missing allow_email" });
+
+  const ref = firestore.doc("allowlist/emails");
+  const doc = await ref.get();
+  if (!doc.exists) return res.json({ status: "ok", emails: [] });
+  const list = doc.data().list.filter((e) => e !== allow_email.toLowerCase().trim());
+  await ref.set({ list });
+  res.json({ status: "ok", emails: list });
 });
 
 /** Health check */
