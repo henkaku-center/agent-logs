@@ -84,6 +84,37 @@ export function registerHooks() {
   writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
 }
 
+/** Remove all agent-logs hooks from Claude Code's settings.json */
+export function unregisterHooks() {
+  if (!existsSync(CLAUDE_SETTINGS)) return;
+  let settings;
+  try {
+    settings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"));
+  } catch {
+    return;
+  }
+  if (!settings.hooks) return;
+
+  for (const event of Object.keys(AGENT_LOGS_HOOKS)) {
+    if (!settings.hooks[event]) continue;
+    settings.hooks[event] = settings.hooks[event].filter(
+      (entry) =>
+        !entry.hooks?.some((h) => h.command?.startsWith("agent-logs "))
+    );
+    // Clean up empty arrays
+    if (settings.hooks[event].length === 0) {
+      delete settings.hooks[event];
+    }
+  }
+
+  // Clean up empty hooks object
+  if (Object.keys(settings.hooks).length === 0) {
+    delete settings.hooks;
+  }
+
+  writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+}
+
 /** Check if agent-logs hooks are registered */
 export function hooksRegistered() {
   if (!existsSync(CLAUDE_SETTINGS)) return false;

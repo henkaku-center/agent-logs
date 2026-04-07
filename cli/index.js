@@ -3,7 +3,7 @@
 import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
 import { login } from "./auth.js";
-import { registerHooks, hooksRegistered } from "./hooks.js";
+import { registerHooks, unregisterHooks, hooksRegistered } from "./hooks.js";
 import { sync } from "./sync.js";
 
 const command = process.argv[2];
@@ -144,6 +144,37 @@ switch (command) {
     break;
   }
 
+  case "uninstall": {
+    const { rmSync } = await import("fs");
+    const { join } = await import("path");
+    const { homedir } = await import("os");
+
+    // Remove hooks from Claude Code
+    unregisterHooks();
+    console.log("Claude Code hooks removed.");
+
+    // Remove config directory
+    const configDir = join(homedir(), ".config", "agent-logs");
+    try {
+      rmSync(configDir, { recursive: true });
+      console.log(`Removed ${configDir}`);
+    } catch {
+      console.log(`${configDir} already removed.`);
+    }
+
+    // Remove launcher script
+    const launcher = join(homedir(), ".local", "bin", "agent-logs");
+    try {
+      rmSync(launcher);
+      console.log(`Removed ${launcher}`);
+    } catch {
+      console.log(`${launcher} already removed.`);
+    }
+
+    console.log("\nUninstall complete. Previously synced data remains on the server.");
+    break;
+  }
+
   default: {
     console.log(`Usage: agent-logs <command>
 
@@ -151,9 +182,8 @@ Commands:
   login          Authenticate and register Claude Code hooks
   consent        Start sharing logs for the current project directory
   withdraw       Stop sharing logs for the current project directory
-  consent-check  (hook) Display sharing status at session start
-  sync           (hook) Sync new log lines to the server
-  doctor         Check configuration and connectivity`);
+  doctor         Check configuration and connectivity
+  uninstall      Remove hooks, config, and CLI`);
     if (command) {
       console.error(`\nUnknown command: ${command}`);
       process.exit(1);
