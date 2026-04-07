@@ -24,26 +24,28 @@ mkdir -p "$CONFIG_DIR"
 
 # ── Download CLI ──
 info "Downloading agent-logs CLI..."
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
 
-git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR/agent-logs" 2>/dev/null
+if ! git clone --depth 1 "https://github.com/${REPO}.git" "$WORK/agent-logs" 2>/dev/null; then
+  err "Failed to clone repository. Check your internet connection and GitHub access."
+fi
 
 # Install dependencies
-cd "$TMPDIR/agent-logs/cli"
-npm install --production --silent 2>/dev/null
+cd "$WORK/agent-logs/cli"
+info "Installing dependencies..."
+npm install --production --silent 2>/dev/null || err "npm install failed"
 
 # Copy CLI to install directory
 CLI_DIR="${CONFIG_DIR}/cli"
 rm -rf "$CLI_DIR"
-cp -r "$TMPDIR/agent-logs/cli" "$CLI_DIR"
+cp -r "$WORK/agent-logs/cli" "$CLI_DIR"
 
-# Create launcher script
-cat > "${INSTALL_DIR}/agent-logs" << 'LAUNCHER'
+# Create launcher script with the correct path baked in
+cat > "${INSTALL_DIR}/agent-logs" <<EOF
 #!/usr/bin/env node
-import("PLACEHOLDER/index.js");
-LAUNCHER
-sed -i "s|PLACEHOLDER|${CLI_DIR}|" "${INSTALL_DIR}/agent-logs"
+import("${CLI_DIR}/index.js");
+EOF
 chmod +x "${INSTALL_DIR}/agent-logs"
 
 ok "CLI installed to ${INSTALL_DIR}/agent-logs"
@@ -58,7 +60,7 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
   printf '\n'
 fi
 
-# ── Login ──
+# ── Next step ──
 printf '\n'
 info "Run 'agent-logs login' to authenticate and register Claude Code hooks."
 printf '\n'
