@@ -14,6 +14,11 @@ const PROJECT_ID = process.env.GCP_PROJECT || "agent-logging";
 const DATASET = "course";
 const TABLE = "logs";
 
+/** Allowed email domains. Only students with these domains can sync logs. */
+const ALLOWED_DOMAINS = (process.env.ALLOWED_DOMAINS || "chibatech.dev,henkaku.center,chibatech.ac.jp")
+  .split(",")
+  .map((d) => d.trim().toLowerCase());
+
 /**
  * Verify caller identity.
  *
@@ -60,6 +65,12 @@ app.post("/ingest", async (req, res) => {
     studentId = await authenticate(req);
   } catch (err) {
     return res.status(401).json({ error: err.message });
+  }
+
+  // Check domain allowlist
+  const domain = studentId.split("@")[1]?.toLowerCase();
+  if (!domain || !ALLOWED_DOMAINS.includes(domain)) {
+    return res.status(403).json({ error: `Domain @${domain} is not authorized` });
   }
 
   const { project_path, session_id, file_name, offset, lines } = req.body;
