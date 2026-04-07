@@ -35,6 +35,11 @@
       <h2>Getting Started</h2>
       <p>Install the agent-logs CLI to start sharing your Claude Code session logs with Chiba Tech.</p>
 
+      <div class="info-box">
+        <strong>Prerequisites</strong>
+        <p style="margin-bottom:0">You need a Claude Enterprise seat issued by Chiba Tech. Log in to agent-logs with the <strong>same email address</strong> as your Claude Enterprise account. If you don't have a seat yet, contact <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
+      </div>
+
       <ol class="steps">
         <li>
           <strong>Install the CLI</strong>
@@ -44,7 +49,8 @@
           </div>
         </li>
         <li>
-          <strong>Log in with your Chiba Tech account</strong>
+          <strong>Log in with your Claude Enterprise email</strong>
+          <p>Sign in with the same Google account used for your Claude Enterprise seat.</p>
           <div class="code-block">
             <span class="command">agent-logs login</span><br>
             <span class="output">Opening browser for Google sign-in...</span><br>
@@ -124,7 +130,7 @@
         <span class="command">agent-logs withdraw</span><br>
         <span class="success">Sharing disabled for: /home/tanaka/coursework/my-project</span>
       </div>
-      <p>Previously synced data remains on the server. To request deletion of previously collected data, contact your instructor or email <a href="mailto:grisha@henkaku.center">grisha@henkaku.center</a>.</p>
+      <p>Previously synced data remains on the server. To request deletion of previously collected data, contact your instructor or email <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
     </div>
   </section>
 
@@ -167,6 +173,10 @@
           <tr>
             <td>Last sync: error</td>
             <td>Check <code>~/.config/agent-logs/last-sync.json</code> for details</td>
+          </tr>
+          <tr>
+            <td>Domain @... is not authorized</td>
+            <td>You must log in with the same email as your Claude Enterprise account. Run <code>agent-logs login</code> with the correct account. If you don't have a Claude Enterprise seat, contact <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</td>
           </tr>
         </tbody>
       </table>
