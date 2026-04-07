@@ -216,6 +216,21 @@ app.post("/ingest", async (req, res) => {
   }
 });
 
+/** GET /check-auth — verify the caller is on the allowlist */
+app.get("/check-auth", async (req, res) => {
+  let email;
+  try { email = await authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  const authorized = await isAuthorized(email);
+  if (!authorized) {
+    return res.status(403).json({
+      error: `${email} is not authorized. Use the same email as your Claude Enterprise account, or contact claude@chibatech.dev to be added.`,
+    });
+  }
+  res.json({ status: "ok", email });
+});
+
 /* ── Admin endpoints ── */
 
 /** GET /admin/allowlist — list all allowed domains and emails */

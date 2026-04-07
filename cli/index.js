@@ -15,6 +15,23 @@ switch (command) {
       const token = await login();
       console.log(`Authenticated as: ${token.email}`);
 
+      // Verify the email is on the allowlist
+      const { getIdToken } = await import("./auth.js");
+      const idToken = await getIdToken();
+      const resp = await fetch(`${INGESTION_URL}/check-auth`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        console.error(`\n${body.error || "Your email is not authorized."}`);
+        console.error("\nLogin saved but syncing will not work until your email is authorized.");
+        // Still save the token so they can re-check later without re-logging in
+        const projects = readProjects();
+        projects.student_id = token.email;
+        writeProjects(projects);
+        process.exit(1);
+      }
+
       // Initialize projects config
       const projects = readProjects();
       projects.student_id = token.email;
