@@ -1,0 +1,16 @@
+{
+  "name": "@henkaku-center/agent-logs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-logs": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.0.0",
+    "open": "^10.0.0"
+  }
+}

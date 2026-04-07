@@ -1,0 +1,16 @@
+{
+  "name": "@henkaku-center/agent-logs-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.0.0",
+    "@google-cloud/firestore": "^7.0.0",
+    "express": "^4.21.0",
+    "google-auth-library": "^9.0.0"
+  }
+}

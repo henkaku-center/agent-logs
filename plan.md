@@ -4,7 +4,7 @@ System for collecting Claude Code session logs from students enrolled in APS-I a
 
 ## Overview
 
-Students receive Claude Enterprise seats provisioned under the `@chibatech.dev` organization. CIT students use their `@chibatech.dev` Google accounts. External students are allocated a seat using their preferred email address and authenticate with that same address throughout. Claude Code stores session logs locally as JSONL files, appending entries in batches (flushed every 100ms). A lightweight CLI tool (`icarus`) installed on student machines reads directly from these files and syncs new lines from shared projects to GCP via Claude Code hooks — no cron job or background process required. A serverless ingestion service (Cloud Run) writes identified logs to BigQuery and, for Tier B participants, applies real-time Phase 1 structural anonymization and writes anonymized copies to a separate BigQuery research dataset. Consent state, identity mapping, and dedup tracking are stored in Firestore. The entire backend scales to zero — no always-on instances.
+Students receive Claude Enterprise seats provisioned under the `@chibatech.dev` organization. CIT students use their `@chibatech.dev` Google accounts. External students are allocated a seat using their preferred email address and authenticate with that same address throughout. Claude Code stores session logs locally as JSONL files, appending entries in batches (flushed every 100ms). A lightweight CLI tool (`agent-logs`) installed on student machines reads directly from these files and syncs new lines from shared projects to GCP via Claude Code hooks — no cron job or background process required. A serverless ingestion service (Cloud Run) writes identified logs to BigQuery and, for Tier B participants, applies real-time Phase 1 structural anonymization and writes anonymized copies to a separate BigQuery research dataset. Consent state, identity mapping, and dedup tracking are stored in Firestore. The entire backend scales to zero — no always-on instances.
 
 ```
 Student machine                          GCP (@chibatech.dev)
@@ -20,15 +20,16 @@ Claude Code starts in new directory
 └──────────┬─────────────────────┘
            │
            ▼
-~/.config/icarus/projects.yaml
+~/.config/agent-logs/projects.yaml
   (tracks per-directory consent)
 
            │
-      Stop hook (each turn, async)
+      Stop hook (each turn, sync)
+      SubagentStop hook (subagent done, sync)
       SessionEnd hook (on exit, sync)
            │
            ▼
-      icarus sync                     ┌─────────────────────┐
+      agent-logs sync                  ┌─────────────────────┐
   (reads from Claude Code's own   ───▶│  Ingestion Service   │
    JSONL files via byte offset)       │  (Cloud Run)         │
                                       └────────┬────────────┘
@@ -54,6 +55,10 @@ All backend services scale to zero. No always-on instances.
 
 Estimated cost for 300 premium-tier users over 3 months: **~$15** (dominated by Cloud Run compute). BigQuery ingestion is free under the Storage Write API's 2 TiB/month allowance. Firestore operations total a few dollars. No idle costs during nights, weekends, or breaks.
 
+### Schema versioning
+
+Claude Code's JSONL format has no explicit schema version field. The `version` field (Claude Code release, e.g. "2.1.87") is present on `user`, `assistant`, `system`, and `progress` records but absent from others — it indicates the release that wrote the record, not a schema contract. The ingestion service handles this by: storing the `version` field when present, treating unknown record types as no-ops (log and skip), and storing the `data` column as opaque JSON so schema changes don't break writes. If Anthropic introduces breaking format changes, the ingestion service can be updated to handle both old and new formats keyed on the Claude Code `version` field.
+
 ---
 
 ## Scope of data collection
@@ -73,7 +78,7 @@ Session logs do **not** include:
 
 All systems are hosted on ISMAP-certified cloud infrastructure (Google Cloud Platform, Tokyo region) within the `@chibatech.dev` organization. No data is transferred outside of Japan. All data in transit is encrypted (TLS). All data at rest is encrypted (GCP default encryption with customer-managed keys where appropriate).
 
-Session logs originate on student machines as a byproduct of Claude Code usage. The `icarus sync` agent copies consented logs to the centralized course and research systems. The local logs on student machines are not part of the research or course infrastructure — they are a standard artifact of the tool, equivalent to browser history. The centralized systems (BigQuery course and research datasets, Firestore consent and mapping collections) are the authoritative data stores and are subject to the retention, access control, and deletion policies described in this document.
+Session logs originate on student machines as a byproduct of Claude Code usage. The `agent-logs sync` agent copies consented logs to the centralized course and research systems. The local logs on student machines are not part of the research or course infrastructure — they are a standard artifact of the tool, equivalent to browser history. The centralized systems (BigQuery course and research datasets, Firestore consent and mapping collections) are the authoritative data stores and are subject to the retention, access control, and deletion policies described in this document.
 
 ---
 
@@ -113,7 +118,7 @@ Entries are queued in memory and flushed every 100ms via a single `appendFile()`
 
 ### Record-type filtering
 
-`icarus sync` filters JSONL lines by record type before upload. Only the following types are synced:
+`agent-logs sync` filters JSONL lines by record type before upload. Only the following types are synced:
 
 - `user` — student prompts (with `tool_result` content blocks stripped; see below)
 - `assistant` — Claude responses, `tool_use` blocks (with `tool_result` content blocks stripped; see below), token usage
@@ -166,28 +171,28 @@ Both record-type filtering and content-block filtering are applied client-side d
 
 ---
 
-## Student-side: `icarus` CLI
+## Student-side: `agent-logs` CLI
 
 ### Installation
 
 ```bash
 # macOS / Linux
-curl -fsSL https://chibatech.dev/icarus/install.sh | bash
+curl -fsSL https://chibatech.dev/agent-logs/install.sh | bash
 
 # Windows PowerShell
-irm https://chibatech.dev/icarus/install.ps1 | iex
+irm https://chibatech.dev/agent-logs/install.ps1 | iex
 ```
 
-The install script downloads the `icarus` binary and places it in PATH. Then the student runs:
+The install script downloads the `agent-logs` binary and places it in PATH. Then the student runs:
 
 ```
-icarus login
+agent-logs login
 ```
 
 - Authenticates with the student's Google account (OAuth flow, stores refresh token). This must be the same email address used for the student's Claude Enterprise seat.
 - Fetches the student's global consent status from the server (Tier B enrollment, if any)
-- Registers three Claude Code hooks in `~/.claude/settings.json` (see hook configuration below)
-- Creates `~/.config/icarus/projects.yaml`
+- Registers four Claude Code hooks in `~/.claude/settings.json` (see hook configuration below)
+- Creates `~/.config/agent-logs/projects.yaml`
 
 No cron job, launchd plist, or Windows Task Scheduler is needed. Sync is driven entirely by Claude Code hooks, making installation cross-platform (macOS, Linux, Windows) with no platform-specific logic.
 
@@ -201,15 +206,15 @@ The startup sequence is:
 2. Workspace trust dialog, if first time in this directory ("Is this a project you created or one you trust?")
 3. `SessionStart` hook fires — outputs a **non-interactive status message** depending on project state
 
-The `SessionStart` hook cannot present an interactive prompt (stdin is consumed by the hook's JSON input, stdout becomes Claude's context). All state changes are made via CLI commands (`icarus consent`, `icarus withdraw`), not through the startup message.
+The `SessionStart` hook cannot present an interactive prompt (stdin is consumed by the hook's JSON input, stdout becomes Claude's context). All state changes are made via CLI commands (`agent-logs consent`, `agent-logs withdraw`), not through the startup message.
 
 #### Project not in file (first time in this directory)
 
 ```
-This project is not being shared with Chiba Tech. Run `icarus consent` to share.
+This project is not being shared with Chiba Tech. Run `agent-logs consent` to share.
 ```
 
-The student is expected to share coursework project directories; the syllabus states that session logs are part of coursework submission. It is the student's responsibility to share the correct directories by running `icarus consent`.
+The student is expected to share coursework project directories; the syllabus states that session logs are part of coursework submission. It is the student's responsibility to share the correct directories by running `agent-logs consent`.
 
 #### Project in `shared`
 
@@ -222,15 +227,15 @@ Chiba Tech — session logs are being shared
   [x] Course purposes (grading and feedback)
   [x] Anonymised data for research         ← only if Tier B opted in
 
-Run `icarus withdraw` to stop sharing logs for this project.
+Run `agent-logs withdraw` to stop sharing logs for this project.
 ```
 
-The message reflects the student's global consent state (cached locally from the server during `icarus login`). "Course purposes" is always checked (a property of enrollment). "Anonymised data for research" is checked only if Tier B opted in via the web portal.
+The message reflects the student's global consent state (cached locally from the server during `agent-logs login`). "Course purposes" is always checked (a property of enrollment). "Anonymised data for research" is checked only if Tier B opted in via the web portal.
 
 #### Project in `withdrawn`
 
 ```
-Session logs are not being shared. Run `icarus consent` to start sharing.
+Session logs are not being shared. Run `agent-logs consent` to start sharing.
 ```
 
 All three messages are injected as `additionalContext` so Claude sees the sharing status in the session context.
@@ -240,20 +245,20 @@ Note that moving a project directory breaks the link with Claude Code's session 
 ### CLI commands
 
 ```
-icarus login          # one-time install: OAuth, hooks, config
-icarus doctor         # check hooks registered, auth valid, server reachable
-icarus consent        # start sharing logs for the current project directory
-icarus withdraw       # stop sharing logs for the current project directory
+agent-logs login          # one-time install: OAuth, hooks, config
+agent-logs doctor         # check hooks registered, auth valid, server reachable
+agent-logs consent        # start sharing logs for the current project directory
+agent-logs withdraw       # stop sharing logs for the current project directory
 ```
 
 The CLI is intentionally minimal. Project-level consent is managed here. Tier B enrollment, session browsing, delete requests, and insight reports are handled through the web portal.
 
-- **`icarus consent`** moves the current directory to the `shared` list in `projects.yaml` (from `withdrawn` or not-in-file). This is how a student opts back in after withdrawing, or explicitly shares a project without waiting for the next session start prompt.
-- **`icarus withdraw`** moves the current directory from `shared` to `withdrawn`. The project will not be synced and the consent prompt will not reappear. Data collected before withdrawal remains on the server — the student can submit a delete request via the portal to remove it.
+- **`agent-logs consent`** moves the current directory to the `shared` list in `projects.yaml` (from `withdrawn` or not-in-file). This is how a student opts back in after withdrawing, or explicitly shares a project without waiting for the next session start prompt.
+- **`agent-logs withdraw`** moves the current directory from `shared` to `withdrawn`. The project will not be synced and the consent prompt will not reappear. Data collected before withdrawal remains on the server — the student can submit a delete request via the portal to remove it.
 
 #### Hook configuration
 
-`icarus login` adds this to `~/.claude/settings.json`:
+`agent-logs login` adds this to `~/.claude/settings.json`:
 
 ```json
 {
@@ -264,7 +269,7 @@ The CLI is intentionally minimal. Project-level consent is managed here. Tier B 
         "hooks": [
           {
             "type": "command",
-            "command": "icarus consent-check",
+            "command": "agent-logs consent-check",
             "timeout": 60
           }
         ]
@@ -275,7 +280,17 @@ The CLI is intentionally minimal. Project-level consent is managed here. Tier B 
         "hooks": [
           {
             "type": "command",
-            "command": "icarus sync"
+            "command": "agent-logs sync"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent-logs sync"
           }
         ]
       }
@@ -285,7 +300,7 @@ The CLI is intentionally minimal. Project-level consent is managed here. Tier B 
         "hooks": [
           {
             "type": "command",
-            "command": "icarus sync"
+            "command": "agent-logs sync"
           }
         ]
       }
@@ -294,18 +309,19 @@ The CLI is intentionally minimal. Project-level consent is managed here. Tier B 
 }
 ```
 
-Three hooks, three roles:
+Four hooks, four roles:
 
 - **`SessionStart`** (matcher: `startup`): consent prompt for unknown directories, status message for consented directories. Fires once at the start of new sessions, not on resumes.
-- **`Stop`** (sync): syncs after every turn. Blocks briefly (1–3s) before the next prompt appears. Synchronous execution guarantees delivery, serializes cursor writes (no `cursors.json` races), and ensures that if the student kills the terminal, all data up to the last completed turn is already on the server. The per-turn latency is acceptable — students already wait 5–30s for Claude's responses.
+- **`Stop`** (sync): syncs the parent session's JSONL after every turn. Blocks briefly (1–3s) before the next prompt appears. Synchronous execution guarantees delivery, serializes cursor writes (no `cursors.json` races), and ensures that if the student kills the terminal, all data up to the last completed turn is already on the server. The per-turn latency is acceptable — students already wait 5–30s for Claude's responses.
+- **`SubagentStop`** (sync): syncs the completing subagent's JSONL file (`{session-id}/subagents/agent-{uuid}.jsonl`). Subagent JSONL files are written during execution (same append pattern as the parent), so the sync picks up all subagent data as soon as the subagent finishes. Runs the same `agent-logs sync` command — the sync process already discovers subagent files via the cursor mechanism, so no separate logic is needed.
 - **`SessionEnd`** (sync): final flush on exit. Blocks briefly to ensure the last turn's data is sent before the process terminates.
 
 ### Config file
 
-`~/.config/icarus/projects.yaml`:
+`~/.config/agent-logs/projects.yaml`:
 
 ```yaml
-student_id: tanaka@chibatech.dev   # set during icarus login
+student_id: tanaka@chibatech.dev   # set during agent-logs login
 tier_b: true                        # cached from server, refreshed on login
 shared:
   - /home/tanaka/coursework/web3-project
@@ -322,15 +338,15 @@ Three states for any project directory:
 
 ### Sync behavior
 
-`icarus sync` is invoked by Claude Code hooks — after every turn (`Stop`, sync) and on session exit (`SessionEnd`, sync). It reads directly from Claude Code's own JSONL session files — no intermediate queue, outbox, or scheduled task. Claude Code appends entries to `~/.claude/projects/{project-dir}/{session-id}.jsonl` in batches (flushed every 100ms). Each session produces its own file, so multiple concurrent Claude Code sessions in the same project do not contend.
+`agent-logs sync` is invoked by Claude Code hooks — after every parent turn (`Stop`), after every subagent completion (`SubagentStop`), and on session exit (`SessionEnd`). It reads directly from Claude Code's own JSONL session files — no intermediate queue, outbox, or scheduled task. Claude Code appends entries to `~/.claude/projects/{project-dir}/{session-id}.jsonl` in batches (flushed every 100ms). Each session produces its own file, so multiple concurrent Claude Code sessions in the same project do not contend.
 
 The sync process:
 
 1. Reads `projects.yaml` to find shared project paths
 2. Maps each path to its Claude Code project directory in `~/.claude/projects/`
 3. Lists all JSONL files in each shared project directory, including subagent files in `{session-id}/subagents/agent-*.jsonl`
-4. For each file, reads from the last-sent byte offset (tracked in `~/.config/icarus/cursors.json`)
-5. **Validates continuity**: if the file is shorter than the stored offset, the file was truncated or replaced — reset the cursor to 0 and re-upload from the start (the server skips lines it already has). If the file is at least as long as the stored offset, read the last 1024 bytes before the cursor and compare their SHA-256 against the stored `tail_hash`. A mismatch means the file was rewritten (not appended) — reset cursor to 0.
+4. For each file, reads from the last-sent byte offset (tracked in `~/.config/agent-logs/cursors.json`)
+5. **Validates continuity**: if the file is shorter than the stored offset, the file was truncated or replaced — reset the cursor to 0 and re-upload from the start (the server skips lines it already has). If the file is at least as long as the stored offset, read the last 1024 bytes before the cursor and compare their SHA-256 against the stored `tail_hash`. A mismatch means the file was rewritten (not appended) — reset cursor to 0. Cursor updates are written atomically (write to temp file, rename) to prevent corruption from interrupted writes.
 6. **Validates, filters, and strips lines**: reads from cursor to EOF but only includes lines that parse as valid JSON and match an allowed record type (see record-type filtering). Within included lines, `tool_result` content blocks are stripped (content field removed, stub retained — see content-block filtering). The read is truncated at the last complete line — any partial trailing bytes (from a crash mid-flush) are left for the next sync. Excluded record types (e.g., `file-history-snapshot`) are skipped but the cursor still advances past them.
 7. POSTs the validated lines to the ingestion endpoint with:
    - Student identity (from stored OAuth token)
@@ -340,7 +356,7 @@ The sync process:
 8. On success: updates the byte offset and `tail_hash` in `cursors.json` to match the server's response. If the server returns a different offset than expected (e.g., it skipped duplicates), the client adopts the server's offset.
 9. On failure: does nothing — the next hook invocation retries from the same offset
 
-Cursor file (`~/.config/icarus/cursors.json`):
+Cursor file (`~/.config/agent-logs/cursors.json`):
 
 ```json
 {
@@ -365,15 +381,15 @@ Cursor file (`~/.config/icarus/cursors.json`):
 
 Each entry tracks the byte offset up to which the file has been successfully sent and a `tail_hash` (SHA-256 of the last 1024 bytes before the offset) used to detect non-append mutations. New files start at offset 0 with no tail hash. A missing or unparseable `cursors.json` is treated as "all cursors at 0" — the server's idempotency check prevents duplicate data.
 
-**Concurrency**: multiple Claude Code sessions produce separate UUID-named JSONL files. Each session's `Stop` hook syncs its own files independently. Because both `Stop` and `SessionEnd` hooks are synchronous, only one `icarus sync` runs per session at a time — no concurrent writes to `cursors.json` within a single session. Across concurrent sessions, each writes to distinct cursor entries (keyed by session UUID), so no locking is needed.
+**Concurrency**: multiple Claude Code sessions produce separate UUID-named JSONL files. Each session's `Stop` hook syncs its own files independently. Because `Stop`, `SubagentStop`, and `SessionEnd` hooks are synchronous, only one `agent-logs sync` runs per session at a time — no concurrent writes to `cursors.json` within a single session. Across concurrent sessions, each writes to distinct cursor entries (keyed by session UUID), so no locking is needed.
 
-**Payload size**: with record-type filtering and `tool_result` stripping applied, synced lines are small (user prompts, assistant text, `tool_use` input arguments, metadata). The two largest content sources — `file-history-snapshot` (excluded by record type) and `tool_result` blocks (stripped at content-block level) — never leave the student's machine. The sync should still cap individual POST payloads and split large batches across multiple requests. The server must accept partial session uploads (the offset mechanism already supports this).
+**Payload size**: with record-type filtering and `tool_result` stripping applied, synced lines are small (user prompts, assistant text, `tool_use` input arguments, metadata). The two largest content sources — `file-history-snapshot` (excluded by record type) and `tool_result` blocks (stripped at content-block level) — never leave the student's machine. The server accepts partial session uploads (the offset mechanism already supports this).
 
 **Spotty connectivity**: if the POST fails, the cursor is not advanced. New lines accumulate in Claude Code's JSONL files as normal. The next `Stop` hook retries from the last known offset. Claude Code itself requires internet connectivity (for the Anthropic API), so prolonged offline periods also mean no new log entries are being generated.
 
 **Interrupts and crashes**: if the user interrupts a turn (Ctrl+C), the `Stop` hook does not fire for that turn — but the data is already in the JSONL file and will be picked up by the next successful sync. If Claude Code crashes, the `SessionEnd` hook does not fire — but the JSONL file survives, and the next session's hooks will sync all unsent data via the byte offset cursor. The only data loss scenario is if a student's machine is destroyed and they never open Claude Code again.
 
-**Consent withdrawal**: `icarus withdraw` moves the project from `shared` to `withdrawn` in `projects.yaml` and deletes its cursor entries. The sync never reads files from projects not in the `shared` list. Previously synced data remains on the server (submit a delete request via the portal to remove it). `icarus consent` moves the project back to `shared` and syncing resumes from where it left off.
+**Consent withdrawal**: `agent-logs withdraw` moves the project from `shared` to `withdrawn` in `projects.yaml` and deletes its cursor entries. The sync never reads files from projects not in the `shared` list. Previously synced data remains on the server (submit a delete request via the portal to remove it). `agent-logs consent` moves the project back to `shared` and syncing resumes from where it left off.
 
 Only files within shared project directories are read. The sync process never accesses unlisted project directories.
 
@@ -431,11 +447,11 @@ Selective omission remains possible (a student could decline to share a project,
 
 | Resource | GCP Project | Purpose | Access |
 |----------|-------------|---------|--------|
-| BigQuery `course.logs` | `icarus-course` | Identified session logs | Course instructors (BigQuery Data Viewer) |
-| BigQuery `research.logs` | `icarus-research` | Anonymous session logs | Research team only (BigQuery Data Viewer) |
-| Firestore `consent/` | `icarus-admin` | Consent records, Tier B status | Ingestion service account only |
-| Firestore `mapping/` | `icarus-admin` | Student identity ↔ anonymous ID | Ingestion service account only |
-| Firestore `offsets/` | `icarus-admin` | Per-session offset ledger for dedup | Ingestion service account only |
+| BigQuery `course.logs` | `agent-logs-course` | Identified session logs | Course instructors (BigQuery Data Viewer) |
+| BigQuery `research.logs` | `agent-logs-research` | Anonymous session logs | Research team only (BigQuery Data Viewer) |
+| Firestore `consent/` | `agent-logs-admin` | Consent records, Tier B status | Ingestion service account only |
+| Firestore `mapping/` | `agent-logs-admin` | Student identity ↔ anonymous ID | Ingestion service account only |
+| Firestore `offsets/` | `agent-logs-admin` | Per-session offset ledger for dedup | Ingestion service account only |
 
 Three separate GCP projects within the `@chibatech.dev` organization. IAM boundaries are structural, not just policy-based. In the POC (Milestone 1), all resources live in a single project; the three-project split happens in Milestone 3.
 
@@ -500,14 +516,14 @@ The mapping table is deleted only after Phase 2 passes both verification stages.
 
 ### Project-level sharing
 
-Every time Claude Code starts a new session in an unknown directory, the `SessionStart` hook displays a message informing the student that the project is not being shared and how to opt in (`icarus consent`). There is no interactive prompt — consent is managed via CLI commands.
+Every time Claude Code starts a new session in an unknown directory, the `SessionStart` hook displays a message informing the student that the project is not being shared and how to opt in (`agent-logs consent`). There is no interactive prompt — consent is managed via CLI commands.
 
 The message is identical for all directories. There is no distinction between coursework and non-coursework projects at consent time.
 
 - **For coursework projects**: the syllabus states that session log sharing is expected for coursework. Instructors filter the course dataset by known assignment repo names (e.g., `web3-assignment-*`, `aps-studio-*`) when grading. If a student chose not to share a coursework project, the instructor simply doesn't have those logs — equivalent to not submitting an assignment.
 - **For non-coursework projects**: shared logs land in the course dataset but instructors ignore them (they don't match any assignment pattern). If the student is Tier B, anonymized copies go to the research dataset.
 
-Students can withdraw project sharing at any time by running `icarus withdraw` in the project directory. Data collected before withdrawal is retained on the server. To remove previously collected data, students must submit a delete request via the web portal (see Delete requests section). To re-share a withdrawn project, the student runs `icarus consent` in that directory.
+Students can withdraw project sharing at any time by running `agent-logs withdraw` in the project directory. Data collected before withdrawal is retained on the server. To remove previously collected data, students must submit a delete request via the web portal (see Delete requests section). To re-share a withdrawn project, the student runs `agent-logs consent` in that directory.
 
 ### Tier A (instruction)
 
@@ -549,7 +565,7 @@ If the student toggles Tier B back on before course end, the revoked flag is cle
 
 | Action | Course dataset | Research dataset | Available when | Reversible? |
 |--------|--------------|----------------|----------------|-------------|
-| **Withdraw project sharing** (`icarus withdraw`) | Stop syncing new sessions. Existing data retained (submit a delete request to remove). | Stop syncing new copies. Existing research data flagged `revoked` (non-queryable). | Anytime | Yes — `icarus consent` re-shares the project |
+| **Withdraw project sharing** (`agent-logs withdraw`) | Stop syncing new sessions. Existing data retained (submit a delete request to remove). | Stop syncing new copies. Existing research data flagged `revoked` (non-queryable). | Anytime | Yes — `agent-logs consent` re-shares the project |
 | **Tier B opt-out** (web portal) | No effect | New copies stop. Existing rows flagged `revoked` (non-queryable). Permanently deleted 1 month post-course if still revoked. | Anytime | Yes — re-opting in clears the revoked flag |
 | **Delete request** (session/project) | Specified data deleted | Specified data deleted | Within withdrawal window (course + 1 month) | No — deletion is permanent |
 | **Drop the course** | Logs stop being generated. Existing data retained per retention policy. | No automatic effect. Student can still opt out of Tier B. | Anytime | N/A |
@@ -654,12 +670,12 @@ The flow:
 
 1. **Student authenticates** to the portal with their Google account (the same account used for their Claude Enterprise seat)
 2. **Consent form displayed** in the student's preferred language (Japanese or English). The form covers all items required by the ethics application. It is a single scrollable document, not a multi-page wizard.
-3. **Student reads and acknowledges**. The acknowledgement is a single action: "I agree to Tier B participation." There is no partial consent — project-level sharing is managed separately through the `SessionStart` hook and `icarus withdraw`.
+3. **Student reads and acknowledges**. The acknowledgement is a single action: "I agree to Tier B participation." There is no partial consent — project-level sharing is managed separately through the `SessionStart` hook and `agent-logs withdraw`.
 4. **On acknowledgement**:
    - The system generates a random anonymous identifier (UUID v4, not derived from any personal attribute)
    - A PDF copy of the signed consent form (with timestamp and anonymous ID, but not student name) is generated for the student to download
    - The server stores: anonymous ID, consent timestamp, language. It does **not** store the student's name or email in the consent record.
-5. **Mapping table updated**: the ingestion service's mapping collection in Firestore (`icarus-admin` project, `mapping/{student_id}`) records the link between the student's email identity and their anonymous ID. This is the only place where the two are connected.
+5. **Mapping table updated**: the ingestion service's mapping collection in Firestore (`agent-logs-admin` project, `mapping/{student_id}`) records the link between the student's email identity and their anonymous ID. This is the only place where the two are connected.
 
 #### Authentication
 
@@ -671,7 +687,7 @@ CIT `@chibatech.dev` accounts are retained for 1 month after the course ends, ma
 
 #### Consent record storage
 
-Consent records are stored in Firestore (`icarus-admin` project, `consent/` collection), linked to the anonymous ID only:
+Consent records are stored in Firestore (`agent-logs-admin` project, `consent/` collection), linked to the anonymous ID only:
 
 ```
 consent/{anon_id}:
@@ -798,13 +814,13 @@ Single web application serving both students and researchers.
 Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to GCP, and an instructor can query them. The POC runs in a safe environment with test data only — no real student PII. Fully serverless — no always-on instances.
 
 1. GCP project setup — single project with BigQuery dataset (`course`), Firestore collections (`offsets/`), Cloud Run service, minimal IAM
-2. `icarus` CLI — `login` (OAuth, refresh token stored in `~/.config/icarus/token.json` with `0600` permissions), `sync` (byte-offset upload to ingestion endpoint), `consent` / `withdraw` (projects.yaml management)
+2. `agent-logs` CLI — `login` (OAuth, refresh token stored in `~/.config/agent-logs/token.json` with `0600` permissions), `sync` (byte-offset upload to ingestion endpoint), `consent` / `withdraw` (projects.yaml management)
 3. Claude Code hooks — `Stop` (sync per-turn sync), `SessionEnd` (final flush)
 4. `SessionStart` hook — static one-line status message ("Chiba Tech: session logs are being shared" / "not shared") so the tester always knows sync state. No interactive consent prompt (deferred to Milestone 2).
 5. Record-type and content-block filtering — exclude `file-history-snapshot`, `last-prompt`, `queue-operation`, `attribution-snapshot`, `content-replacement` by record type; strip `tool_result` content blocks within included records (retain stub with `tool_use_id` and `type`, drop `content`). Even in a safe environment, `file-history-snapshot` lines can be megabytes and `tool_result` blocks (especially `Read` results with base64 images) dominate payload size. Filtering is a simple type check + content-block walk on parsed JSON — low cost to include now, avoids retrofitting later.
 6. Ingestion service — Cloud Run endpoint that authenticates uploads and writes rows to BigQuery `course.logs` via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data`. No GCS objects to manage, no compaction needed.
 7. Idempotency — the offset ledger in Firestore (`offsets/{student_id}/{session_id}`) tracks the last accepted offset per session. The dedup read and offset update run in a single Firestore transaction, preventing races from concurrent `Stop` hooks.
-8. Error surfacing — `icarus sync` writes the last sync result (timestamp, status, error message if any) to `~/.config/icarus/last-sync.json`. The `SessionStart` status message includes the last sync time. `icarus doctor` (basic version) checks: hooks registered, auth token valid, ingestion endpoint reachable, last sync status.
+8. Error surfacing — `agent-logs sync` writes the last sync result (timestamp, status, error message if any) to `~/.config/agent-logs/last-sync.json`. The `SessionStart` status message includes the last sync time. `agent-logs doctor` (basic version) checks: hooks registered, auth token valid, ingestion endpoint reachable, last sync status.
 9. Manual verification — instructor queries session logs directly in BigQuery (`SELECT * FROM course.logs WHERE session_id = '...' ORDER BY offset`). No scripts or file reconstruction needed.
 
 ### Milestone 2: full feature set
@@ -812,7 +828,7 @@ Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to 
 Build out the student-facing and researcher-facing features described in this document. Add the research dataset with real-time Phase 1 anonymization.
 
 1. `SessionStart` hook refinement — full consent-check with status messages for shared/withdrawn/unknown projects, Tier B status display
-2. `icarus doctor` (full version) — check hooks registered, auth valid, server reachable, last sync status, BigQuery connectivity
+2. `agent-logs doctor` (full version) — check hooks registered, auth valid, server reachable, last sync status, BigQuery connectivity
 3. Install script (macOS, Linux, Windows)
 4. Cursor validation — tail hash continuity checks, re-upload on file truncation/rewrite
 5. Firestore consent and mapping collections — `consent/{anon_id}` for Tier B status, `mapping/{student_id}` for identity ↔ anonymous ID link, delete request tracking
@@ -828,7 +844,7 @@ Build out the student-facing and researcher-facing features described in this do
 
 Harden the system for production use with real student data.
 
-1. GCP project separation — split into three projects (`icarus-course`, `icarus-research`, `icarus-admin`) with structural IAM boundaries. BigQuery datasets and Firestore collections move to their respective projects.
+1. GCP project separation — split into three projects (`agent-logs-course`, `agent-logs-research`, `agent-logs-admin`) with structural IAM boundaries. BigQuery datasets and Firestore collections move to their respective projects.
 2. Phase 2 LLM scrubbing and adversarial re-identification verification (post-course, before mapping deletion)
 3. Data retention enforcement — automated deletion schedules (BigQuery table expiration, Firestore TTL policies) for course dataset, research dataset, mapping collection, accounts
 4. Small-cohort protections — suppression, composite descriptions, differential privacy for APS-I
