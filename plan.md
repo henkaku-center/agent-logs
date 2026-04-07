@@ -261,8 +261,7 @@ The CLI is intentionally minimal. Project-level consent is managed here. Tier B 
         "hooks": [
           {
             "type": "command",
-            "command": "icarus sync",
-            "async": true
+            "command": "icarus sync"
           }
         ]
       }
@@ -284,8 +283,8 @@ The CLI is intentionally minimal. Project-level consent is managed here. Tier B 
 Three hooks, three roles:
 
 - **`SessionStart`** (matcher: `startup`): consent prompt for unknown directories, status message for consented directories. Fires once at the start of new sessions, not on resumes.
-- **`Stop`** (async): syncs after every turn. Runs in the background so it never blocks the student's next prompt.
-- **`SessionEnd`** (sync): final flush on exit. Blocks briefly to ensure all data is sent before the process terminates.
+- **`Stop`** (sync): syncs after every turn. Blocks briefly (1–3s) before the next prompt appears. Synchronous execution guarantees delivery, serializes cursor writes (no `cursors.json` races), and ensures that if the student kills the terminal, all data up to the last completed turn is already on the server. The per-turn latency is acceptable — students already wait 5–30s for Claude's responses.
+- **`SessionEnd`** (sync): final flush on exit. Blocks briefly to ensure the last turn's data is sent before the process terminates.
 
 ### Config file
 
@@ -309,7 +308,7 @@ Three states for any project directory:
 
 ### Sync behavior
 
-`icarus sync` is invoked by Claude Code hooks — after every turn (`Stop`, async) and on session exit (`SessionEnd`, sync). It reads directly from Claude Code's own JSONL session files — no intermediate queue, outbox, or scheduled task. Claude Code appends entries to `~/.claude/projects/{project-dir}/{session-id}.jsonl` in batches (flushed every 100ms). Each session produces its own file, so multiple concurrent Claude Code sessions in the same project do not contend.
+`icarus sync` is invoked by Claude Code hooks — after every turn (`Stop`, sync) and on session exit (`SessionEnd`, sync). It reads directly from Claude Code's own JSONL session files — no intermediate queue, outbox, or scheduled task. Claude Code appends entries to `~/.claude/projects/{project-dir}/{session-id}.jsonl` in batches (flushed every 100ms). Each session produces its own file, so multiple concurrent Claude Code sessions in the same project do not contend.
 
 The sync process:
 
@@ -352,7 +351,7 @@ Cursor file (`~/.config/icarus/cursors.json`):
 
 Each entry tracks the byte offset up to which the file has been successfully sent and a `tail_hash` (SHA-256 of the last 1024 bytes before the offset) used to detect non-append mutations. New files start at offset 0 with no tail hash. A missing or unparseable `cursors.json` is treated as "all cursors at 0" — the server's idempotency check prevents duplicate data.
 
-**Concurrency**: multiple Claude Code sessions produce separate UUID-named JSONL files. Each session's `Stop` hook syncs its own files independently. No locking is needed because Claude Code only appends to its own session file, and the sync only reads.
+**Concurrency**: multiple Claude Code sessions produce separate UUID-named JSONL files. Each session's `Stop` hook syncs its own files independently. Because both `Stop` and `SessionEnd` hooks are synchronous, only one `icarus sync` runs per session at a time — no concurrent writes to `cursors.json` within a single session. Across concurrent sessions, each writes to distinct cursor entries (keyed by session UUID), so no locking is needed.
 
 **Payload size**: with record-type filtering applied, most synced lines are small (user prompts, assistant text, metadata). The largest excluded type (`file-history-snapshot`) never leaves the student's machine. The sync should still cap individual POST payloads and split large batches across multiple requests, since `tool_result` blocks can contain substantial content. The server must accept partial session uploads (the offset mechanism already supports this).
 
@@ -396,7 +395,7 @@ Content-Type: application/json
 3. **Write to `course.logs`** (BigQuery, identified): insert rows via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row with columns: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data` (the original JSON line as a STRING or JSON column).
 4. **Check Tier B consent**: read consent state from Firestore (`consent/{student_id}`)
 5. **If Tier B**: look up anonymous ID from Firestore (`mapping/{student_id}`), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `student_id` and structural fields scrubbed.
-6. **Update offset ledger**: write the new offset to Firestore (`offsets/{student_id}/{session_id}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent `Stop` hooks).
+6. **Update offset ledger**: write the new offset to Firestore (`offsets/{student_id}/{session_id}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent sessions).
 7. **Return** success with sync state for client re-alignment:
    ```json
    {
@@ -410,7 +409,7 @@ Content-Type: application/json
 
 ### Log integrity
 
-Session logs are synced via the `Stop` hook after every turn, reading directly from Claude Code's append-only JSONL files. Because the sync runs automatically and immediately — not as a deferred batch job — there is minimal opportunity for a student to modify log contents between Claude Code writing them and the sync uploading them. This structural property replaces the need for explicit tamper detection (e.g., `requestId` verification against the Anthropic API).
+Session logs are synced via the synchronous `Stop` hook after every turn, reading directly from Claude Code's append-only JSONL files. Because the sync runs automatically, immediately, and blocks before the next prompt — not as a deferred batch job — there is no opportunity for a student to modify log contents between Claude Code writing them and the sync uploading them. This structural property replaces the need for explicit tamper detection (e.g., `requestId` verification against the Anthropic API).
 
 Selective omission remains possible (a student could decline to share a project, or withdraw consent mid-semester). This is a data completeness issue, not an integrity issue, and is addressed through the existing survey question on AI tool usage.
 
@@ -518,11 +517,11 @@ Tier B is an explicit opt-in via the web portal. It controls whether anonymized 
 
 **Opt-in**: the student toggles Tier B on in the web portal. This triggers a transfer of all their existing shared session logs (from date of consent onward) to the research dataset, with Phase 1 structural anonymization applied. New logs are anonymized and copied to the research dataset at ingestion time going forward.
 
-**Opt-out**: the student toggles Tier B off in the web portal at any time. New logs stop being copied to the research dataset immediately. The meta-insights report becomes inaccessible. However, **existing research data is not deleted immediately** — deletion is deferred to 1 month after course end (when the mapping table is deleted). This prevents repeated toggling of Tier B from triggering unnecessary data transfers and deletions. The student is informed of this: "Your research data will be permanently deleted 1 month after the course ends."
+**Opt-out**: the student toggles Tier B off in the web portal at any time. New logs stop being copied to the research dataset immediately. The meta-insights report becomes inaccessible. Existing research data rows are **flagged as revoked** (`revoked = true`) and become immediately non-queryable — all research queries use authorized views that filter `WHERE revoked = false`. The student sees the effect of their opt-out right away.
 
-If the student toggles Tier B back on before the deferred deletion, the existing research data is retained and the opt-out is cancelled — no data was lost and no redundant transfer is needed.
+If the student toggles Tier B back on before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset. No data was lost and no redundant transfer is needed.
 
-**Final deletion**: at 1 month post-course, all students whose Tier B status is "opted out" have their research data permanently deleted along with the mapping table. Students who are still opted in retain their research data for the 5-year research retention period.
+**Final deletion**: at 1 month post-course, all rows still flagged `revoked = true` are permanently deleted along with the mapping table. Students who are still opted in retain their research data for the 5-year research retention period.
 
 ### Consent state matrix
 
@@ -536,9 +535,9 @@ If the student toggles Tier B back on before the deferred deletion, the existing
 
 | Action | Course dataset | Research dataset | Available when | Reversible? |
 |--------|--------------|----------------|----------------|-------------|
-| **Withdraw project sharing** (`icarus withdraw`) | Stop syncing new sessions. Existing data retained (submit a delete request to remove). | Stop syncing new copies. Existing research data retained until deferred deletion. | Anytime | Yes — `icarus consent` re-shares the project |
-| **Tier B opt-out** (web portal) | No effect | New copies stop. Existing data retained; deleted 1 month post-course if still opted out. | Anytime | Yes — re-opting in cancels the deferred deletion |
-| **Delete request** (session/project) | Specified data deleted | Specified data deleted | Anytime, even after course ends | No — deletion is permanent |
+| **Withdraw project sharing** (`icarus withdraw`) | Stop syncing new sessions. Existing data retained (submit a delete request to remove). | Stop syncing new copies. Existing research data flagged `revoked` (non-queryable). | Anytime | Yes — `icarus consent` re-shares the project |
+| **Tier B opt-out** (web portal) | No effect | New copies stop. Existing rows flagged `revoked` (non-queryable). Permanently deleted 1 month post-course if still revoked. | Anytime | Yes — re-opting in clears the revoked flag |
+| **Delete request** (session/project) | Specified data deleted | Specified data deleted | Within withdrawal window (course + 1 month) | No — deletion is permanent |
 | **Drop the course** | Logs stop being generated. Existing data retained per retention policy. | No automatic effect. Student can still opt out of Tier B. | Anytime | N/A |
 
 ---
@@ -555,12 +554,6 @@ If the student toggles Tier B back on before the deferred deletion, the existing
 | **External student portal access** | Course duration + 1 month | Email removed from allowlist. Matches withdrawal window. |
 
 After the mapping table is deleted, no person or system can connect research data to student identities.
-
----
-
-## Notification before analysis
-
-Before any new research analysis is performed using Tier B data, all opted-in students are notified through the web portal. The notification describes the purpose and scope of the analysis. Students have a minimum of 14 days to withdraw before the analysis is finalized. This ensures consent is an ongoing relationship, not a one-time event.
 
 ---
 
@@ -607,13 +600,20 @@ Delete requests can target:
 
 4. **Deletion executed**: deletes specified rows from both BigQuery datasets (`DELETE FROM course.logs WHERE ...`, `DELETE FROM research.logs WHERE ...`). Logged in audit trail.
 
-### Distinction from global withdrawal
+### Availability
 
-| | Delete request | Global withdrawal |
+Delete requests are available **within the withdrawal window** (course duration + 1 month). After the mapping table is deleted, the system cannot identify which anonymous ID belongs to the requesting student, so targeted deletion from the research dataset is no longer possible.
+
+After the withdrawal window closes, the only mechanism for removing research data is a petition to delete the **entire research dataset**, which requires unanimous consensus among all Tier B participants. This is a governance process outside the scope of this system.
+
+### Distinction from Tier B opt-out
+
+| | Delete request | Tier B opt-out |
 |--|---------------|-------------------|
 | Scope | Specific sessions or projects | All research data |
-| Available when | Anytime (even after withdrawal window) | Within withdrawal window only |
-| Affects course data | Yes (both datasets) | Research dataset only |
+| Available when | Within withdrawal window (course + 1 month) | Anytime during course |
+| Affects course data | Yes (both datasets) | No (research dataset only) |
+| Effect | Permanent deletion | Rows flagged `revoked` (non-queryable), permanently deleted 1 month post-course if still revoked |
 | Requires review | Yes (researcher confirms scope) | No (self-service, immediate) |
 | Reason required | Yes | No |
 
@@ -691,15 +691,16 @@ Logs generated before the consent date remain in the course dataset only (Tier A
 1. Student logs into the portal with their Google account
 2. Navigates to Study Consent page
 3. Toggles Tier B off
-4. System confirms: "New logs will no longer be shared for research. Your existing research data will be permanently deleted 1 month after the course ends. You can re-enable Tier B at any time before then to cancel the deletion."
-5. New logs stop being copied to the research dataset immediately
-6. Meta-insights report becomes inaccessible
-7. Consent record status set to `opted_out` with timestamp
-8. No effect on course dataset data or personal insights report
+4. System confirms: "New logs will no longer be shared for research. Your existing research data is now hidden from all queries. You can re-enable Tier B at any time during the course to restore access. Data still flagged as revoked 1 month after course end will be permanently deleted."
+5. Existing research data rows flagged `revoked = true` — immediately non-queryable via authorized views
+6. New logs stop being copied to the research dataset immediately
+7. Meta-insights report becomes inaccessible
+8. Consent record status set to `opted_out` with timestamp
+9. No effect on course dataset data or personal insights report
 
-Existing research data is **not deleted immediately**. Deletion is deferred to 1 month post-course (when the mapping table is deleted). This prevents repeated toggling from triggering unnecessary data transfers and deletions. If the student re-opts in before the deferred deletion, the opt-out is cancelled — existing research data is retained, the meta-insights report becomes accessible again, and new logs resume flowing to the research dataset.
+If the student re-opts in before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset.
 
-After the mapping table is deleted (1 month post-course), Tier B changes are no longer possible — the system cannot determine which anonymous ID belongs to which student. Students whose status is `opted_out` at that point have their research data permanently deleted. Students are informed of this deadline at consent time and reminded at end of course.
+After the mapping table is deleted (1 month post-course), Tier B changes are no longer possible — the system cannot determine which anonymous ID belongs to which student. Rows still flagged `revoked = true` at that point are permanently deleted. Students are informed of this deadline at consent time and reminded at end of course.
 
 ---
 
@@ -784,7 +785,7 @@ Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to 
 
 1. GCP project setup — single project with BigQuery dataset (`course`), Firestore collections (`offsets/`), Cloud Run service, minimal IAM
 2. `icarus` CLI — `login` (OAuth, refresh token stored in `~/.config/icarus/token.json` with `0600` permissions), `sync` (byte-offset upload to ingestion endpoint), `consent` / `withdraw` (projects.yaml management)
-3. Claude Code hooks — `Stop` (async per-turn sync), `SessionEnd` (final flush)
+3. Claude Code hooks — `Stop` (sync per-turn sync), `SessionEnd` (final flush)
 4. `SessionStart` hook — static one-line status message ("Chiba Tech: session logs are being shared" / "not shared") so the tester always knows sync state. No interactive consent prompt (deferred to Milestone 2).
 5. Record-type filtering — exclude `file-history-snapshot`, `last-prompt`, `queue-operation`, `attribution-snapshot`, `content-replacement` client-side before upload. Even in a safe environment, `file-history-snapshot` lines can be megabytes and waste bandwidth. Filtering is a simple type check on parsed JSON — low cost to include now, avoids retrofitting later.
 6. Ingestion service — Cloud Run endpoint that authenticates uploads and writes rows to BigQuery `course.logs` via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data`. No GCS objects to manage, no compaction needed.
@@ -804,9 +805,10 @@ Build out the student-facing and researcher-facing features described in this do
 6. Tier B data pipeline — on ingestion, if student is Tier B: look up anonymous ID from `mapping/`, apply Phase 1 structural anonymization (`cwd`, project paths, `requestId`, `gitBranch`), write to BigQuery `research.logs`. Research dataset never contains unscrubbed structural fields.
 7. Backfill on late opt-in — when a student opts into Tier B mid-semester, anonymize and copy their existing `course.logs` rows to `research.logs` (from consent date onward)
 8. Web portal — student views (projects, sessions, consent, delete requests, sync status) and researcher views (delete queue, sync monitoring, consent overview)
-9. Tier B opt-in/opt-out flow via web portal
-10. Personal insights report generation
-11. Meta-insights report generation (Tier B, cohort context)
+9. Tier B opt-in/opt-out flow via web portal — opt-out flags research rows as `revoked` (non-queryable via authorized views), re-opt-in clears the flag
+10. BigQuery authorized views — all research queries go through views that filter `WHERE revoked = false`
+11. Personal insights report generation
+12. Meta-insights report generation (Tier B, cohort context)
 
 ### Milestone 3: security, privacy, and compliance
 
@@ -817,5 +819,5 @@ Harden the system for production use with real student data.
 3. Data retention enforcement — automated deletion schedules (BigQuery table expiration, Firestore TTL policies) for course dataset, research dataset, mapping collection, accounts
 4. Small-cohort protections — suppression, composite descriptions, differential privacy for APS-I
 5. Consent form signing — PDF generation, researcher archive, late opt-in mechanics
-6. Delete request processing — review workflow, deletion from both BigQuery datasets (`DELETE FROM ... WHERE anon_id = ?`), audit trail
-7. Notification system — 14-day notice before new research analyses
+6. Delete request processing — review workflow, deletion from both BigQuery datasets (`DELETE FROM ... WHERE anon_id = ?`), audit trail. Available within withdrawal window only.
+7. Revoked-row cleanup — permanent deletion of rows still flagged `revoked = true` at 1 month post-course
