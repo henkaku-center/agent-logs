@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Logs — Chiba Tech SDS</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container">
+      <a href="https://student.chibatech.dev/">
+        <img src="assets/sds-logo-horizontal-white.svg" alt="Chiba Tech School of Design & Science" class="logo">
+      </a>
+      <nav>
+        <a href="https://student.chibatech.dev/">Student Portal</a>
+        <span class="auth-bar" id="auth-bar"></span>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <h1>Agent Logs</h1>
+      <p class="subtitle">Session log collection for Claude Code. Your logs help instructors provide better feedback on your coding process.</p>
+    </div>
+  </section>
+
+  <!-- Getting Started -->
+  <section class="section" id="setup">
+    <div class="container">
+      <h2>Getting Started</h2>
+      <p>Install the agent-logs CLI to start sharing your Claude Code session logs with Chiba Tech.</p>
+
+      <ol class="steps">
+        <li>
+          <strong>Install the CLI</strong>
+          <div class="code-block">
+            <span class="comment"># macOS / Linux</span><br>
+            <span class="command">curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash</span>
+          </div>
+        </li>
+        <li>
+          <strong>Log in with your Chiba Tech account</strong>
+          <div class="code-block">
+            <span class="command">agent-logs login</span><br>
+            <span class="output">Opening browser for Google sign-in...</span><br>
+            <span class="success">Authenticated as: tanaka@chibatech.dev</span><br>
+            <span class="success">Claude Code hooks registered.</span>
+          </div>
+        </li>
+        <li>
+          <strong>Share your coursework projects</strong>
+          <p>Navigate to each project directory and run:</p>
+          <div class="code-block">
+            <span class="command">cd ~/coursework/my-project</span><br>
+            <span class="command">agent-logs consent</span><br>
+            <span class="success">Sharing enabled for: /home/tanaka/coursework/my-project</span>
+          </div>
+        </li>
+        <li>
+          <strong>Use Claude Code as normal</strong>
+          <p>Logs sync automatically after each turn. You'll see a status message at the start of each session:</p>
+          <div class="code-block">
+            <span class="output">Chiba Tech — session logs are being shared</span><br>
+            <span class="output">&nbsp; [x] Course purposes (grading and feedback)</span>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Managing Projects -->
+  <section class="section" id="manage">
+    <div class="container">
+      <h2>Managing Projects</h2>
+      <p>You control which project directories are shared. Only shared projects have their Claude Code logs synced.</p>
+
+      <h3>Commands</h3>
+      <table class="project-table">
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>agent-logs consent</code></td>
+            <td>Start sharing logs for the current directory</td>
+          </tr>
+          <tr>
+            <td><code>agent-logs withdraw</code></td>
+            <td>Stop sharing logs for the current directory</td>
+          </tr>
+          <tr>
+            <td><code>agent-logs doctor</code></td>
+            <td>Check that everything is configured correctly</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box">
+        <strong>What gets shared?</strong>
+        <p style="margin-bottom:0">Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are <strong>never</strong> shared — they are stripped before leaving your machine.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Withdraw -->
+  <section class="section" id="withdraw">
+    <div class="container">
+      <h2>Withdrawing</h2>
+      <p>You can stop sharing a project at any time:</p>
+      <div class="code-block">
+        <span class="command">cd ~/coursework/my-project</span><br>
+        <span class="command">agent-logs withdraw</span><br>
+        <span class="success">Sharing disabled for: /home/tanaka/coursework/my-project</span>
+      </div>
+      <p>Previously synced data remains on the server. To request deletion of previously collected data, contact your instructor or email <a href="mailto:grisha@henkaku.center">grisha@henkaku.center</a>.</p>
+    </div>
+  </section>
+
+  <!-- Troubleshooting -->
+  <section class="section" id="troubleshoot">
+    <div class="container">
+      <h2>Troubleshooting</h2>
+      <p>Run the doctor command to diagnose issues:</p>
+      <div class="code-block">
+        <span class="command">agent-logs doctor</span><br><br>
+        <span class="output">agent-logs doctor</span><br>
+        <span class="output">Auth:     logged in as tanaka@chibatech.dev</span><br>
+        <span class="output">Hooks:    registered</span><br>
+        <span class="output">Projects: 2 shared, 0 withdrawn</span><br>
+        <span class="output">Last sync: ok at 2026-04-07T10:30:00Z</span><br>
+        <span class="output">Server:   https://...run.app — ok</span>
+      </div>
+
+      <h3>Common Issues</h3>
+      <table class="project-table">
+        <thead>
+          <tr>
+            <th>Symptom</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Hooks: NOT REGISTERED</td>
+            <td>Run <code>agent-logs login</code> again to re-register hooks</td>
+          </tr>
+          <tr>
+            <td>Auth: NOT LOGGED IN</td>
+            <td>Run <code>agent-logs login</code> to authenticate</td>
+          </tr>
+          <tr>
+            <td>Server: UNREACHABLE</td>
+            <td>Check your internet connection. The server may be temporarily down.</td>
+          </tr>
+          <tr>
+            <td>Last sync: error</td>
+            <td>Check <code>~/.config/agent-logs/last-sync.json</code> for details</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <span>
+        <a href="https://chibatech.jp/">Chiba Tech</a> &middot;
+        <a href="https://sds.chibatech.dev/">Graduate School of Design & Science</a> &middot;
+        <a href="https://henkaku.center">Henkaku Center</a>
+      </span>
+      <a href="https://github.com/henkaku-center/agent-logs">GitHub</a>
+    </div>
+  </footer>
+
+</body>
+</html>
