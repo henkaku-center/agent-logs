@@ -99,8 +99,8 @@ Entries are queued in memory and flushed every 100ms via a single `appendFile()`
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `user` | `message`, `cwd`, `sessionId`, `timestamp`, `gitBranch`, `version`, `permissionMode` | User prompt or tool result acknowledgement |
-| `assistant` | `message`, `cwd`, `sessionId`, `timestamp`, `requestId`, `model`, `usage` | Claude response (includes token counts in `usage`). Tool inputs and outputs are embedded as `tool_use` and `tool_result` content blocks. |
+| `user` | `message`, `cwd`, `sessionId`, `timestamp`, `gitBranch`, `version`, `permissionMode` | User prompt or tool result acknowledgement. `tool_result` content blocks are **stripped** during sync (see content-block filtering below). |
+| `assistant` | `message`, `cwd`, `sessionId`, `timestamp`, `requestId`, `model`, `usage` | Claude response (includes token counts in `usage`). `tool_use` blocks are kept (tool name + input arguments). `tool_result` content blocks are **stripped** during sync. |
 | `system` | `subtype`, `durationMs`, `sessionId`, `timestamp` | Metadata (turn duration) |
 | `progress` | `data`, `toolUseID`, `timestamp` | Hook and tool progress events |
 | `file-history-snapshot` | `snapshot`, `messageId`, `isSnapshotUpdate` | File state tracking. Embeds full file contents inline — a single line can be megabytes. **Excluded from sync** (see record-type filtering below). |
@@ -115,8 +115,8 @@ Entries are queued in memory and flushed every 100ms via a single `appendFile()`
 
 `icarus sync` filters JSONL lines by record type before upload. Only the following types are synced:
 
-- `user` — student prompts and tool result acknowledgements
-- `assistant` — Claude responses, tool invocations, token usage
+- `user` — student prompts (with `tool_result` content blocks stripped; see below)
+- `assistant` — Claude responses, `tool_use` blocks (with `tool_result` content blocks stripped; see below), token usage
 - `system` — turn duration metadata
 - `progress` — hook and tool progress events
 - `summary` — session summaries
@@ -126,13 +126,27 @@ The following types are **excluded** because they contain no pedagogical or rese
 
 | Excluded type | Reason |
 |---------------|--------|
-| `file-history-snapshot` | Embeds arbitrary file contents from the student's machine (potentially credentials, private keys, personal documents). A single line can be megabytes. Not needed — file edits are already visible as `tool_use`/`tool_result` blocks in `assistant` records. |
+| `file-history-snapshot` | Embeds arbitrary file contents from the student's machine (potentially credentials, private keys, personal documents). A single line can be megabytes. Not needed — file edits are already visible as `tool_use` blocks in `assistant` records. |
 | `last-prompt` | Internal Claude Code state, duplicates content already in `user` records. |
 | `queue-operation` | Internal queue housekeeping. |
 | `attribution-snapshot` | Internal attribution tracking. |
 | `content-replacement` | Internal content replacement records. |
 
-This filtering is applied client-side during sync (step 6), before any data leaves the student's machine. It reduces payload size, eliminates the largest source of incidental PII, and strengthens the data minimization argument for ethics review.
+### Content-block filtering: `tool_result` exclusion
+
+Within synced `user` and `assistant` records, `tool_result` content blocks are **stripped** before upload. Each `tool_result` block is replaced with a stub preserving only `tool_use_id` and `type` (so the tool-call/result sequence remains parseable) but dropping the `content` field.
+
+This was evaluated across four angles using empirical data from a power-user corpus (602 sessions, 457 MB):
+
+**File size and infra**: `tool_result` blocks account for 27.5% of total log content across all sessions, and up to 77% in reading-heavy sessions. The heaviest entries are `Read` tool results (avg 19 KB each), dominated by base64-encoded images (screenshots, PNGs up to 197 KB per result). Stripping them reduces synced volume by 30–80% depending on session type, keeping per-turn sync payloads well within the `Stop` hook's latency budget.
+
+**Privacy**: `tool_result` blocks are the highest-risk, hardest-to-anonymize data in the log format. They contain raw file contents from the student's disk (`Read` results — including images), command output (`Bash` results — may include env vars, credentials, directory listings), and web page content (`WebFetch` results). Phase 1 structural anonymization cannot scrub these (it only handles known fields). Phase 2 LLM scrubbing would need to parse base64 images and arbitrary command output — unreliable and expensive. Excluding `tool_result` eliminates the most unpredictable PII vector before data leaves the student's machine.
+
+**Educational value**: instructors need to see *what the student asked* (user prompts — kept), *what Claude did* (`tool_use` blocks showing tool name + input arguments — kept), and *how the session evolved* (turn count, duration, token usage — kept via `system` and `usage` records). The raw output of each tool call adds little: the `tool_use` block already shows the file path or command, and the assistant's interpretation appears in the next assistant message. The one case with genuine pedagogical signal — error output from `Bash` — is small (avg 657 bytes) and the signal is mostly in the *sequence* of tool_use attempts, not the raw stderr.
+
+**Research value**: the research scope (interaction patterns, AI literacy progression, context rot analysis) is fully served by `tool_use` blocks, `usage` fields, and `system` records. Context rot signals — token usage growth, cache hit ratio decay, error frequency, turn duration — are all captured in `assistant.message.usage` and `system` records regardless of `tool_result` inclusion. The one minor loss is raw error text for automated error taxonomy, but the assistant's response typically quotes or paraphrases the key part, partially preserving this signal.
+
+Both record-type filtering and content-block filtering are applied client-side during sync (step 6), before any data leaves the student's machine. Together they reduce payload size by 30–80%, eliminate the two largest sources of incidental PII (`file-history-snapshot` and `tool_result`), and strengthen the data minimization argument for ethics review.
 
 ### PII locations in logs
 
@@ -142,7 +156,7 @@ This filtering is applied client-side during sync (step 6), before any data leav
 | Project directory name | `-home-tanaka-coursework-project` | High — encodes full path |
 | `message.content` (user prompts) | Free text: emails, names, URLs | High — unpredictable content |
 | `message.content` (assistant responses) | Echoes back user PII, references names | High |
-| `message.content` (`tool_result` blocks) | File contents from disk, command output — may contain anything | High |
+| ~~`message.content` (`tool_result` blocks)~~ | ~~File contents from disk, command output — may contain anything~~ | **Stripped from sync** — content dropped, stub retained for sequence parsing |
 | ~~`file-history-snapshot`~~ | ~~Full file contents serialized inline~~ | **Excluded from sync** — never leaves the student's machine |
 | `subagents/*.jsonl` | Same schema as parent session | High — recursive |
 | `gitBranch` | `tanaka/feature-x` | Low — may contain username |
@@ -317,7 +331,7 @@ The sync process:
 3. Lists all JSONL files in each shared project directory, including subagent files in `{session-id}/subagents/agent-*.jsonl`
 4. For each file, reads from the last-sent byte offset (tracked in `~/.config/icarus/cursors.json`)
 5. **Validates continuity**: if the file is shorter than the stored offset, the file was truncated or replaced — reset the cursor to 0 and re-upload from the start (the server skips lines it already has). If the file is at least as long as the stored offset, read the last 1024 bytes before the cursor and compare their SHA-256 against the stored `tail_hash`. A mismatch means the file was rewritten (not appended) — reset cursor to 0.
-6. **Validates and filters lines**: reads from cursor to EOF but only includes lines that parse as valid JSON and match an allowed record type (see record-type filtering). The read is truncated at the last complete line — any partial trailing bytes (from a crash mid-flush) are left for the next sync. Excluded record types (e.g., `file-history-snapshot`) are skipped but the cursor still advances past them.
+6. **Validates, filters, and strips lines**: reads from cursor to EOF but only includes lines that parse as valid JSON and match an allowed record type (see record-type filtering). Within included lines, `tool_result` content blocks are stripped (content field removed, stub retained — see content-block filtering). The read is truncated at the last complete line — any partial trailing bytes (from a crash mid-flush) are left for the next sync. Excluded record types (e.g., `file-history-snapshot`) are skipped but the cursor still advances past them.
 7. POSTs the validated lines to the ingestion endpoint with:
    - Student identity (from stored OAuth token)
    - Project path (so the server can associate it with the right project)
@@ -353,7 +367,7 @@ Each entry tracks the byte offset up to which the file has been successfully sen
 
 **Concurrency**: multiple Claude Code sessions produce separate UUID-named JSONL files. Each session's `Stop` hook syncs its own files independently. Because both `Stop` and `SessionEnd` hooks are synchronous, only one `icarus sync` runs per session at a time — no concurrent writes to `cursors.json` within a single session. Across concurrent sessions, each writes to distinct cursor entries (keyed by session UUID), so no locking is needed.
 
-**Payload size**: with record-type filtering applied, most synced lines are small (user prompts, assistant text, metadata). The largest excluded type (`file-history-snapshot`) never leaves the student's machine. The sync should still cap individual POST payloads and split large batches across multiple requests, since `tool_result` blocks can contain substantial content. The server must accept partial session uploads (the offset mechanism already supports this).
+**Payload size**: with record-type filtering and `tool_result` stripping applied, synced lines are small (user prompts, assistant text, `tool_use` input arguments, metadata). The two largest content sources — `file-history-snapshot` (excluded by record type) and `tool_result` blocks (stripped at content-block level) — never leave the student's machine. The sync should still cap individual POST payloads and split large batches across multiple requests. The server must accept partial session uploads (the offset mechanism already supports this).
 
 **Spotty connectivity**: if the POST fails, the cursor is not advanced. New lines accumulate in Claude Code's JSONL files as normal. The next `Stop` hook retries from the last known offset. Claude Code itself requires internet connectivity (for the Anthropic API), so prolonged offline periods also mean no new log entries are being generated.
 
@@ -445,7 +459,7 @@ Applied to every record at ingestion before writing to the research dataset. Fas
 | `gitBranch` | Strip username prefixes (e.g., `tanaka/feature` becomes `anon/feature`) |
 | Session file paths | Strip username from path components |
 
-This removes identity from structural fields only. Free-text content (`message.content`, inline `tool_result` blocks) is left intact — scrubbing free text with regex is fragile (false positives corrupt research data, false negatives miss contextual PII). Free-text anonymization is deferred to Phase 2. Note that `file-history-snapshot` records are excluded from sync entirely (see record-type filtering) and never reach the server.
+This removes identity from structural fields only. Free-text content (`message.content`) is left intact — scrubbing free text with regex is fragile (false positives corrupt research data, false negatives miss contextual PII). Free-text anonymization is deferred to Phase 2. Note that the two highest-risk content sources — `file-history-snapshot` records and `tool_result` content blocks — are excluded from sync entirely (see record-type and content-block filtering) and never reach the server.
 
 ### Phase 2: LLM scrub and adversarial verification (post-course)
 
@@ -787,7 +801,7 @@ Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to 
 2. `icarus` CLI — `login` (OAuth, refresh token stored in `~/.config/icarus/token.json` with `0600` permissions), `sync` (byte-offset upload to ingestion endpoint), `consent` / `withdraw` (projects.yaml management)
 3. Claude Code hooks — `Stop` (sync per-turn sync), `SessionEnd` (final flush)
 4. `SessionStart` hook — static one-line status message ("Chiba Tech: session logs are being shared" / "not shared") so the tester always knows sync state. No interactive consent prompt (deferred to Milestone 2).
-5. Record-type filtering — exclude `file-history-snapshot`, `last-prompt`, `queue-operation`, `attribution-snapshot`, `content-replacement` client-side before upload. Even in a safe environment, `file-history-snapshot` lines can be megabytes and waste bandwidth. Filtering is a simple type check on parsed JSON — low cost to include now, avoids retrofitting later.
+5. Record-type and content-block filtering — exclude `file-history-snapshot`, `last-prompt`, `queue-operation`, `attribution-snapshot`, `content-replacement` by record type; strip `tool_result` content blocks within included records (retain stub with `tool_use_id` and `type`, drop `content`). Even in a safe environment, `file-history-snapshot` lines can be megabytes and `tool_result` blocks (especially `Read` results with base64 images) dominate payload size. Filtering is a simple type check + content-block walk on parsed JSON — low cost to include now, avoids retrofitting later.
 6. Ingestion service — Cloud Run endpoint that authenticates uploads and writes rows to BigQuery `course.logs` via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data`. No GCS objects to manage, no compaction needed.
 7. Idempotency — the offset ledger in Firestore (`offsets/{student_id}/{session_id}`) tracks the last accepted offset per session. The dedup read and offset update run in a single Firestore transaction, preventing races from concurrent `Stop` hooks.
 8. Error surfacing — `icarus sync` writes the last sync result (timestamp, status, error message if any) to `~/.config/icarus/last-sync.json`. The `SessionStart` status message includes the last sync time. `icarus doctor` (basic version) checks: hooks registered, auth token valid, ingestion endpoint reachable, last sync status.
