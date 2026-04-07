@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # agent-logs installer for macOS / Linux
-# Usage: curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash
+# Usage: curl -fsSL https://logs.chibatech.dev/install.sh | bash
 set -euo pipefail
 
 REPO="henkaku-center/agent-logs"
