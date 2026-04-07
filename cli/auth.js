@@ -12,8 +12,8 @@ import { OAuth2Client } from "google-auth-library";
  * be baked into the distributed binary.
  */
 
-const CLIENT_ID = process.env.AGENT_LOGS_CLIENT_ID || "321175301732-h76b62fmfgvuraf0okl8n77fnm2ldv2m.apps.googleusercontent.com";
-const CLIENT_SECRET = process.env.AGENT_LOGS_CLIENT_SECRET || "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";
+const CLIENT_ID = process.env.AGENT_LOGS_CLIENT_ID || "321175301732-oft6g9q023o50cnqrp98ceoi277l8e74.apps.googleusercontent.com";
+const CLIENT_SECRET = process.env.AGENT_LOGS_CLIENT_SECRET || "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";
 const REDIRECT_URI = "http://localhost:3000/callback";
 
 export function createOAuthClient() {
