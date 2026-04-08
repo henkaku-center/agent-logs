@@ -193,12 +193,10 @@ switch (command) {
       projects.shared.push(cwd);
       projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
       writeProjects(projects);
-      console.log(`  ${green("●")} Sharing enabled.\n`);
     } else if (choice === false) {
       projects.withdrawn.push(cwd);
       projects.shared = projects.shared.filter((p) => p !== cwd);
       writeProjects(projects);
-      console.log(`  ${yellow("○")} Sharing declined.\n`);
     }
     // choice === null (Esc) — do nothing, ask again next time, don't launch claude
     if (choice === null) process.exit(1);
