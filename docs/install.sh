@@ -75,4 +75,4 @@ WRAPPER
 else
   info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
 fi
-ok "Installation complete. Run \033[38;2;227;137;62mclaude\033[0m to get started."
+printf '\033[1;32m✓\033[0m Installation complete. Run \033[38;2;227;137;62mclaude\033[0m to get started.\n'
