@@ -6,18 +6,6 @@ const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json");
 
 /** The hooks that agent-logs registers in Claude Code */
 const AGENT_LOGS_HOOKS = {
-  SessionStart: [
-    {
-      matcher: "startup",
-      hooks: [
-        {
-          type: "command",
-          command: "agent-logs consent-check",
-          timeout: 60,
-        },
-      ],
-    },
-  ],
   Stop: [
     {
       hooks: [
@@ -121,10 +109,8 @@ export function hooksRegistered() {
   try {
     const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"));
     const hooks = settings.hooks || {};
-    return (
-      hooks.Stop?.some((e) => e.hooks?.some((h) => h.command?.startsWith("agent-logs "))) &&
-      hooks.SubagentStop?.some((e) => e.hooks?.some((h) => h.command?.startsWith("agent-logs "))) &&
-      hooks.SessionEnd?.some((e) => e.hooks?.some((h) => h.command?.startsWith("agent-logs ")))
+    return Object.keys(AGENT_LOGS_HOOKS).every((event) =>
+      hooks[event]?.some((e) => e.hooks?.some((h) => h.command?.startsWith("agent-logs ")))
     );
   } catch {
     return false;
