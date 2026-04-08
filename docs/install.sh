@@ -76,8 +76,5 @@ else
   info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
 fi
 
-# ── Next step ──
 printf '\n'
-info "Run 'agent-logs login' to authenticate and register Claude Code hooks."
-printf '\n'
-ok "Installation complete."
+ok "Installation complete. Run 'claude' to get started."

@@ -153,7 +153,6 @@ switch (command) {
     // Runs BEFORE claude launches (called by shell wrapper, not a hook).
     // If folder state is already known, exits immediately. Otherwise
     // shows an interactive Y/n prompt like Claude's own trust dialog.
-    const projects = readProjects();
     const cwd = process.cwd();
 
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
@@ -164,9 +163,23 @@ switch (command) {
     const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
     const line = dim("─".repeat(52));
 
-    // Not logged in — nothing to ask
-    const tokenData = readToken();
-    if (!tokenData?.token) break;
+    // Not logged in or expired — initiate login
+    if (!readToken()?.token) {
+      try {
+        const result = await login();
+        console.log(`Authenticated as: ${result.email}`);
+        const p = readProjects();
+        p.student_id = result.email;
+        writeProjects(p);
+        registerHooks();
+      } catch (err) {
+        console.error(`Login failed: ${err.message}`);
+        break;
+      }
+    }
+
+    // Read projects after potential login
+    const projects = readProjects();
 
     // Already decided — skip
     if (projects.shared.includes(cwd) || projects.withdrawn.includes(cwd)) break;
