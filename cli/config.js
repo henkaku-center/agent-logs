@@ -17,18 +17,18 @@ export function ensureConfigDir() {
 /** Read projects.yaml (simple key-value parser, no yaml dep needed for POC) */
 export function readProjects() {
   if (!existsSync(PROJECTS_FILE)) {
-    return { student_id: null, tier_b: false, shared: [], withdrawn: [] };
+    return { student_id: null, research_use: false, shared: [], withdrawn: [] };
   }
   const text = readFileSync(PROJECTS_FILE, "utf8");
-  const config = { student_id: null, tier_b: false, shared: [], withdrawn: [] };
+  const config = { student_id: null, research_use: false, shared: [], withdrawn: [] };
   let currentList = null;
 
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (trimmed.startsWith("student_id:")) {
       config.student_id = trimmed.slice("student_id:".length).trim();
-    } else if (trimmed.startsWith("tier_b:")) {
-      config.tier_b = trimmed.slice("tier_b:".length).trim() === "true";
+    } else if (trimmed.startsWith("research_use:")) {
+      config.research_use = trimmed.slice("research_use:".length).trim() === "true";
     } else if (trimmed === "shared:") {
       currentList = "shared";
     } else if (trimmed === "withdrawn:") {
@@ -45,7 +45,7 @@ export function writeProjects(config) {
   ensureConfigDir();
   const lines = [
     `student_id: ${config.student_id || ""}`,
-    `tier_b: ${config.tier_b}`,
+    `research_use: ${config.research_use}`,
     "shared:",
     ...config.shared.map((p) => `  - ${p}`),
     "withdrawn:",
