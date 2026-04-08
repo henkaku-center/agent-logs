@@ -1,3 +1,6 @@
+import { readFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import { readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
 import { createInterface } from "readline";
@@ -10,6 +13,16 @@ function prompt(question) {
       resolve(answer.trim());
     });
   });
+}
+
+/** Read email from Claude Code's config (~/.claude.json) */
+function readClaudeEmail() {
+  try {
+    const config = JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8"));
+    return config.oauthAccount?.emailAddress || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -25,13 +38,18 @@ export function getToken() {
 
 /**
  * Magic code login flow:
- * 1. Prompt for email
+ * 1. Read email from Claude config or prompt
  * 2. Server checks allowlist, sends 6-digit code via email
  * 3. Prompt for code
  * 4. Server verifies, returns JWT
  */
 export async function login() {
-  const email = await prompt("Claude account email: ");
+  let email = readClaudeEmail();
+  if (email) {
+    console.log(`Using Claude account: ${email}`);
+  } else {
+    email = await prompt("Claude account email: ");
+  }
   if (!email || !email.includes("@")) {
     throw new Error("Invalid email address");
   }
@@ -46,7 +64,9 @@ export async function login() {
 
   if (!sendResp.ok) {
     const body = await sendResp.json().catch(() => ({}));
-    throw new Error(body.error || `Server error: ${sendResp.status}`);
+    throw new Error(
+      `Claude account not recognized.\nContact \x1b[4;34mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.`
+    );
   }
 
   // Prompt for code
