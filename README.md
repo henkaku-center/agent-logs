@@ -30,7 +30,7 @@ Claude Code JSONL files
 ## Student setup
 
 ```bash
-curl -fsSL https://logs.chibatech.dev/install.sh | bash
+curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash
 agent-logs login
 cd ~/coursework/my-project
 agent-logs consent
