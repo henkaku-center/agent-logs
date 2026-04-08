@@ -69,7 +69,7 @@ export async function login() {
 
   if (!sendResp.ok) {
     throw new Error(
-      `Claude account not recognized.\n Contact \x1b[4;34mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.\n Otherwise use \x1b[1magent-logs uninstall\x1b[0m to remove this tool.`
+      `Claude account not recognized.\n Contact \x1b[4;36mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.\n Otherwise use \x1b[1magent-logs uninstall\x1b[0m to remove this tool.`
     );
   }
   log(` Verification code sent to ${email}`);
