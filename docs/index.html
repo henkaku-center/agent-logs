@@ -47,24 +47,30 @@
             <span class="comment"># macOS / Linux</span><br>
             <span class="command">curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash</span>
           </div>
+          <p>Then load the wrapper into your current shell:</p>
+          <div class="code-block">
+            <span class="command">source ~/.bashrc</span> <span class="comment"># or ~/.zshrc for zsh</span>
+          </div>
         </li>
         <li>
           <strong>Launch Claude Code</strong>
-          <p>Navigate to your coursework directory and run <code>claude</code>. On first launch you'll be prompted to log in with your Claude account email — a verification code will be sent to you.</p>
+          <p>Navigate to your coursework directory and run <code>claude</code>. On first launch you'll be asked to verify your email — a code will be sent to your Claude account email.</p>
           <div class="code-block">
             <span class="command">cd ~/coursework/my-project</span><br>
             <span class="command">claude</span><br>
-            <span class="output">Claude account email: tanaka@chibatech.dev</span><br>
-            <span class="output">Sending verification code to tanaka@chibatech.dev...</span><br>
-            <span class="output">Enter the 6-digit code from your email: 123456</span><br>
-            <span class="success">Authenticated as: tanaka@chibatech.dev</span>
+            <span class="output">────────────────────────────────────────────────────</span><br>
+            <span class="output">Agent Logging Authentication</span><br>
+            <span class="output"></span><br>
+            <span class="output">Verification code sent to tanaka@chibatech.dev</span><br>
+            <span class="output">Enter the 6-digit code from your email: 123456</span>
           </div>
         </li>
         <li>
           <strong>Choose whether to share this folder</strong>
           <p>A consent dialog will appear before Claude starts. Use the arrow keys to select and press Enter. You'll only be asked once per folder.</p>
           <div class="code-block">
-            <span class="output">Chiba Tech · Agent Logs</span><br>
+            <span class="output">────────────────────────────────────────────────────</span><br>
+            <span class="output">Agent Logging Consent</span><br>
             <span class="output"></span><br>
             <span class="output">Share session logs for this workspace?</span><br>
             <span class="output">/home/tanaka/coursework/my-project</span><br>
@@ -77,7 +83,11 @@
         </li>
         <li>
           <strong>Use Claude Code as normal</strong>
-          <p>Session logs sync automatically in the background. You can change your choice anytime with <code>agent-logs withdraw</code> or <code>agent-logs consent</code>.</p>
+          <p>Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. You can change your choice anytime with <code>agent-logs withdraw</code> or <code>agent-logs consent</code>.</p>
+        </li>
+        <li>
+          <strong>Complete the pre-study survey</strong>
+          <p>Visit the <a href="portal.html">Student Portal</a> to manage your consent settings and complete the required course survey.</p>
         </li>
       </ol>
     </div>
@@ -138,7 +148,7 @@
         <span class="command">agent-logs withdraw</span><br>
         <span class="success">Sharing disabled for: /home/tanaka/coursework/my-project</span>
       </div>
-      <p>Previously synced data remains on the server. To request deletion of previously collected data, contact your instructor or email <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
+      <p>You can request deletion of previously collected data via the <a href="portal.html">Student Portal</a> or by emailing <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
     </div>
   </section>
 
