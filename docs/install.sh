@@ -60,6 +60,22 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
   printf '\n'
 fi
 
+# ── Install claude wrapper ──
+CLAUDE_VERSIONS="${HOME}/.local/share/claude/versions"
+
+if [ -d "$CLAUDE_VERSIONS" ]; then
+  rm -f "${INSTALL_DIR}/claude"
+  cat > "${INSTALL_DIR}/claude" <<'WRAPPER'
+#!/usr/bin/env bash
+agent-logs consent-dialog
+exec "$(ls -t "$HOME/.local/share/claude/versions"/* | head -1)" "$@"
+WRAPPER
+  chmod +x "${INSTALL_DIR}/claude"
+  ok "Claude wrapper installed"
+else
+  info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
+fi
+
 # ── Next step ──
 printf '\n'
 info "Run 'agent-logs login' to authenticate and register Claude Code hooks."
