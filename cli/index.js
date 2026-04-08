@@ -80,7 +80,7 @@ async function promptConsent() {
 }
 
 // Commands that don't require authentication
-const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-dialog", "sync", undefined]);
+const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-dialog", "consent-status", "sync", undefined]);
 
 if (!PUBLIC_COMMANDS.has(command)) {
   const token = readToken();
@@ -217,6 +217,30 @@ switch (command) {
     }
     // choice === null (Esc) — do nothing, ask again next time, don't launch claude
     if (choice === null) process.exit(1);
+    break;
+  }
+
+  case "consent-status": {
+    // StatusLine command — reads JSON from stdin, outputs colored status
+    const projects = readProjects();
+    let input = "";
+    for await (const chunk of process.stdin) input += chunk;
+
+    let cwd = process.cwd();
+    try {
+      const data = JSON.parse(input);
+      if (data.cwd) cwd = data.cwd;
+    } catch {}
+
+    const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+    const green = (s) => `\x1b[32m${s}\x1b[0m`;
+    const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+
+    if (projects.shared.includes(cwd)) {
+      console.log(`${cyan("Agent Logs")} ${green("●")} Sharing enabled ${dim("·")} ${dim(projects.student_id)}`);
+    } else {
+      console.log(`${cyan("Agent Logs")} ${dim("○ Not sharing")}`);
+    }
     break;
   }
 

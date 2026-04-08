@@ -69,6 +69,12 @@ export function registerHooks() {
     settings.hooks[event].push(...hookConfigs);
   }
 
+  // Register statusLine
+  settings.statusLine = {
+    type: "command",
+    command: "agent-logs consent-status",
+  };
+
   writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
 }
 
@@ -98,6 +104,11 @@ export function unregisterHooks() {
   // Clean up empty hooks object
   if (Object.keys(settings.hooks).length === 0) {
     delete settings.hooks;
+  }
+
+  // Remove statusLine if it's ours
+  if (settings.statusLine?.command?.startsWith("agent-logs ")) {
+    delete settings.statusLine;
   }
 
   writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
