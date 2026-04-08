@@ -187,6 +187,8 @@ switch (command) {
     // Unknown folder — show consent dialog
     const cols = process.stdout.columns || 89;
     const cyanLine = cyan("─".repeat(cols));
+    // Save cursor position so we can clear the dialog after
+    process.stdout.write("\x1b[s");
     console.log([
       cyanLine,
       cyan(` Agent Logging Consent`),
@@ -202,6 +204,9 @@ switch (command) {
     ].join("\n"));
 
     const choice = await promptConsent();
+
+    // Clear dialog: restore cursor position and erase everything below
+    process.stdout.write("\x1b[u\x1b[J");
 
     if (choice === true) {
       projects.shared.push(cwd);

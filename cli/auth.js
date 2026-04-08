@@ -46,6 +46,7 @@ export function getToken() {
 export async function login() {
   const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
   const cols = process.stdout.columns || 89;
+  process.stdout.write("\x1b[s");
   console.log(`${cyan("─".repeat(cols))}\n${cyan(" Agent Logging Authentication")}\n`);
 
   let email = readClaudeEmail();
@@ -92,5 +93,7 @@ export async function login() {
 
   // Store token
   writeToken({ token: result.token, email: result.email });
+  // Clear auth dialog
+  process.stdout.write("\x1b[u\x1b[J");
   return { email: result.email };
 }
