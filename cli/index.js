@@ -95,7 +95,6 @@ switch (command) {
     console.log("Logging in to agent-logs...");
     try {
       const result = await login();
-      console.log(` Authenticated as: ${result.email}`);
 
       // Initialize projects config
       const projects = readProjects();
@@ -167,8 +166,7 @@ switch (command) {
     if (!readToken()?.token) {
       try {
         const result = await login();
-        console.log(` Authenticated as: ${result.email}`);
-        const p = readProjects();
+          const p = readProjects();
         p.student_id = result.email;
         writeProjects(p);
         registerHooks();
