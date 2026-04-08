@@ -31,7 +31,7 @@ export function getToken() {
  * 4. Server verifies, returns JWT
  */
 export async function login() {
-  const email = await prompt("Enter your email (same as your Claude account): ");
+  const email = await prompt("Claude account email: ");
   if (!email || !email.includes("@")) {
     throw new Error("Invalid email address");
   }
