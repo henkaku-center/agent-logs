@@ -277,18 +277,38 @@ async function loadSurvey() {
     const data = await apiFetch("/portal/survey");
     const preStudy = data.surveys.pre_study;
 
-    if (preStudy.status === "locked") {
-      container.innerHTML = "<p>The pre-study survey is not yet available.</p>";
+    // Find the first available (unlocked, not completed) survey
+    const surveyOrder = ["pre_study", "mid_semester", "post_study"];
+    let activeSurveyId = null;
+    let activeSurvey = null;
+
+    for (const id of surveyOrder) {
+      const s = data.surveys[id];
+      if (s.status === "not_started" || s.status === "in_progress") {
+        activeSurveyId = id;
+        activeSurvey = s;
+        break;
+      }
+    }
+
+    // Show completion status for all surveys
+    const statusHtml = surveyOrder.map((id) => {
+      const s = data.surveys[id];
+      const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[id];
+      const badge = s.status === "completed" ? '<span class="status shared">Complete</span>'
+        : s.status === "locked" ? '<span class="status withdrawn">Locked</span>'
+        : s.status === "in_progress" ? '<span class="status" style="background:#FFF3E0;color:#E65100">In progress</span>'
+        : '<span class="status withdrawn">Not started</span>';
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span>${badge}</div>`;
+    }).join("");
+
+    if (!activeSurvey) {
+      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div><div class="info-box"><strong>All available surveys complete.</strong> Thank you for your responses.</div>`;
       return;
     }
 
-    if (preStudy.status === "completed") {
-      container.innerHTML = '<div class="info-box"><strong>Pre-study survey complete.</strong> Thank you for your responses.</div>';
-      return;
-    }
-
-    const responses = preStudy.responses || {};
-    container.innerHTML = renderSurveyForm(responses);
+    const responses = activeSurvey.responses || {};
+    container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>` + renderSurveyForm(activeSurveyId, responses);
 
     // Auto-save on change
     let saveTimeout;
@@ -309,82 +329,159 @@ async function saveSurvey(completed) {
   const form = document.getElementById("survey-form");
   if (!form) return;
 
+  // Collect responses, handling checkboxes specially
   const formData = new FormData(form);
   const responses = {};
+  const checkboxes = {};
   for (const [key, value] of formData.entries()) {
-    responses[key] = value;
+    // Group checkbox values with ||| separator
+    const el = form.querySelector(`[name="${key}"]`);
+    if (el && el.type === "checkbox") {
+      if (!checkboxes[key]) checkboxes[key] = [];
+      checkboxes[key].push(value);
+    } else {
+      responses[key] = value;
+    }
   }
+  for (const [key, values] of Object.entries(checkboxes)) {
+    responses[key] = values.join("|||");
+  }
+
+  // Determine active survey from the form
+  const surveyId = form.dataset.surveyId || "pre_study";
 
   try {
     await apiFetch("/portal/survey", {
       method: "POST",
-      body: { survey_id: "pre_study", responses, completed },
+      body: { survey_id: surveyId, responses, completed },
     });
     if (completed) {
-      document.getElementById("survey-container").innerHTML =
-        '<div class="info-box"><strong>Pre-study survey submitted.</strong> Thank you!</div>';
+      loadSurvey(); // Refresh to show completion status
     }
   } catch (err) {
     alert(`Failed to save: ${err.message}`);
   }
 }
 
-function renderSurveyForm(responses) {
-  // Survey questions — will be populated from survey-data.js
-  // For now, render a placeholder structure
-  return `
-    <form id="survey-form">
-      <div class="info-box">
-        <strong>Pre-Study Survey</strong>
-        <p style="margin-bottom:0">This survey helps us understand your background and experience with AI tools. Your responses are confidential. It takes approximately 15-20 minutes.</p>
-      </div>
+function renderSurveyForm(surveyId, responses) {
+  const survey = window.SURVEYS?.[surveyId];
+  if (!survey) return "<p>Survey definition not found.</p>";
 
-      <div class="survey-section">
-        <h3>A0. Background Information</h3>
-        <p class="section-desc">Please tell us about yourself.</p>
+  let sections = survey.sections;
 
-        <div class="survey-question">
-          <div class="question-text">1. What is your age range?</div>
+  // Post-study reuses A1-A5 from pre_study
+  if (surveyId === "post_study") {
+    sections = window.SURVEYS.pre_study.sections.filter(
+      (s) => s.phase.includes("post_study")
+    );
+  }
+
+  const html = sections.map((section, si) => {
+    const scale = section.scale || section.vignetteScale;
+    const questionsHtml = section.questions.map((q, qi) => {
+      const num = qi + 1;
+      if (q.type === "radio") {
+        return `<div class="survey-question">
+          <div class="question-text">${num}. ${q.text}</div>
           <div class="radio-group">
-            ${["18-22", "23-27", "28-35", "36+"].map((v) => `
-              <label><input type="radio" name="A0_1" value="${v}" ${responses.A0_1 === v ? "checked" : ""}> ${v}</label>
+            ${q.options.map((opt) => `
+              <label><input type="radio" name="${q.id}" value="${opt}" ${responses[q.id] === opt ? "checked" : ""}> ${opt}</label>
             `).join("")}
           </div>
-        </div>
+        </div>`;
+      }
 
-        <div class="survey-question">
-          <div class="question-text">2. What is your program of study?</div>
-          <textarea class="survey-text" name="A0_2" placeholder="e.g., Computer Science, Design...">${responses.A0_2 || ""}</textarea>
-        </div>
-
-        <div class="survey-question">
-          <div class="question-text">3. How would you rate your programming experience?</div>
+      if (q.type === "likert") {
+        const s = scale || { min: 1, max: 7, minLabel: "", maxLabel: "" };
+        const range = Array.from({ length: s.max - s.min + 1 }, (_, i) => s.min + i);
+        return `<div class="survey-question">
+          <div class="question-text">${num}. ${q.text}</div>
           <div class="likert-scale">
-            ${[1,2,3,4,5,6,7].map((n) => `
-              <label><input type="radio" name="A0_3" value="${n}" ${responses.A0_3 == n ? "checked" : ""}><span>${n}</span></label>
+            ${range.map((n) => `
+              <label><input type="radio" name="${q.id}" value="${n}" ${responses[q.id] == n ? "checked" : ""}><span>${n}</span></label>
             `).join("")}
           </div>
-          <div class="likert-labels"><span>No experience</span><span>Expert</span></div>
-        </div>
-      </div>
+          <div class="likert-labels"><span>${s.minLabel}</span><span>${s.maxLabel}</span></div>
+        </div>`;
+      }
 
-      <div class="survey-section">
-        <h3>A1. AI Tool Familiarity</h3>
-        <p class="section-desc">Rate your familiarity with the following AI tools (1 = Never used, 7 = Use daily).</p>
-
-        ${["ChatGPT", "Claude", "GitHub Copilot", "Cursor", "Other AI coding tools"].map((tool, i) => `
-          <div class="survey-question">
-            <div class="question-text">${i + 1}. ${tool}</div>
-            <div class="likert-scale">
-              ${[1,2,3,4,5,6,7].map((n) => `
-                <label><input type="radio" name="A1_${i+1}" value="${n}" ${responses[`A1_${i+1}`] == n ? "checked" : ""}><span>${n}</span></label>
-              `).join("")}
-            </div>
-            <div class="likert-labels"><span>Never used</span><span>Use daily</span></div>
+      if (q.type === "vignette") {
+        const vs = section.vignetteScale || { min: 1, max: 7, minLabel: "", maxLabel: "" };
+        const range = Array.from({ length: vs.max - vs.min + 1 }, (_, i) => vs.min + i);
+        return `<div class="survey-question">
+          <div class="question-text"><strong>${num}. ${q.text}</strong></div>
+          <p style="margin:8px 0">A. How appropriate is this task for AI?</p>
+          <div class="likert-scale">
+            ${range.map((n) => `
+              <label><input type="radio" name="${q.id}_a" value="${n}" ${responses[q.id + "_a"] == n ? "checked" : ""}><span>${n}</span></label>
+            `).join("")}
           </div>
-        `).join("")}
-      </div>
+          <div class="likert-labels"><span>${vs.minLabel}</span><span>${vs.maxLabel}</span></div>
+          <p style="margin:12px 0 4px">B. Explain your reasoning (1-2 sentences)</p>
+          <textarea class="survey-text" name="${q.id}_b" rows="2">${responses[q.id + "_b"] || ""}</textarea>
+          <p style="margin:12px 0 4px">C. Which tool would you use?</p>
+          <input class="form-input" name="${q.id}_c" value="${responses[q.id + "_c"] || ""}" placeholder="e.g., Claude Code, ChatGPT, none...">
+        </div>`;
+      }
 
+      if (q.type === "text") {
+        return `<div class="survey-question">
+          <div class="question-text">${num}. ${q.text}</div>
+          <input class="form-input" name="${q.id}" value="${responses[q.id] || ""}" placeholder="${q.placeholder || ""}">
+        </div>`;
+      }
+
+      if (q.type === "textarea") {
+        return `<div class="survey-question">
+          <div class="question-text">${num}. ${q.text}</div>
+          <textarea class="survey-text" name="${q.id}" rows="3">${responses[q.id] || ""}</textarea>
+        </div>`;
+      }
+
+      if (q.type === "checkbox") {
+        const selected = (responses[q.id] || "").split("|||");
+        return `<div class="survey-question">
+          <div class="question-text">${num}. ${q.text}</div>
+          <div class="radio-group">
+            ${q.options.map((opt) => `
+              <label><input type="checkbox" name="${q.id}" value="${opt}" ${selected.includes(opt) ? "checked" : ""}> ${opt}</label>
+            `).join("")}
+          </div>
+        </div>`;
+      }
+
+      if (q.type === "percentage") {
+        return `<div class="survey-question">
+          <div class="question-text">${num}. ${q.text}</div>
+          <div class="percentage-inputs">
+            ${q.categories.map((cat, ci) => `
+              <div style="display:flex;align-items:center;gap:8px;margin:6px 0">
+                <label style="flex:1;font-weight:400">${cat}</label>
+                <input type="number" class="form-input" style="width:80px;margin:0" name="${q.id}_${ci}" value="${responses[q.id + "_" + ci] || ""}" min="0" max="100" placeholder="%">
+              </div>
+            `).join("")}
+            <div style="text-align:right;font-weight:700;margin-top:8px" id="${q.id}_total">Total: 0%</div>
+          </div>
+        </div>`;
+      }
+
+      return "";
+    }).join("");
+
+    return `<div class="survey-section">
+      <h3>${section.id}. ${section.title}</h3>
+      <p class="section-desc">${section.description}</p>
+      ${questionsHtml}
+    </div>`;
+  }).join("");
+
+  return `
+    <form id="survey-form" data-survey-id="${surveyId}">
+      <div class="info-box">
+        <strong>${survey.title}</strong>
+        <p style="margin-bottom:0">${survey.description}</p>
+      </div>
+      ${html}
       <div class="survey-nav">
         <button type="button" class="btn btn-secondary" id="survey-save">Save progress</button>
         <button type="button" class="btn btn-primary" id="survey-submit">Submit survey</button>
