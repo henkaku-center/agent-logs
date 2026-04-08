@@ -104,9 +104,13 @@ switch (command) {
 
     const line = dim("─".repeat(52));
 
+    // stderr = visible to user in terminal
+    // stdout = injected into Claude's context
+    const banner = (msg) => console.error(msg);
+
     const tokenData = readToken();
     if (!tokenData?.token) {
-      console.log([
+      banner([
         line,
         `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
         `  ${yellow("⚠")} Not logged in`,
@@ -132,9 +136,11 @@ switch (command) {
         `  ${dim(`Run ${blue("agent-logs withdraw")} to stop sharing.`)}`,
         line,
       );
-      console.log(lines.join("\n"));
+      banner(lines.join("\n"));
+      // Context for Claude
+      console.log(`agent-logs: session logs are being shared for ${hookCwd} by ${projects.student_id}`);
     } else if (projects.withdrawn.includes(hookCwd)) {
-      console.log([
+      banner([
         line,
         `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
         `  ${yellow("○")} Session logs are ${bold("not")} being shared`,
@@ -144,7 +150,7 @@ switch (command) {
         line,
       ].join("\n"));
     } else {
-      console.log([
+      banner([
         line,
         `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
         `  ${yellow("○")} This project is not being shared`,
