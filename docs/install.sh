@@ -71,7 +71,7 @@ agent-logs consent-dialog || exit 0
 exec "$(ls -t "$HOME/.local/share/claude/versions"/* | head -1)" "$@"
 WRAPPER
   chmod +x "${INSTALL_DIR}/claude"
-  ok "Claude wrapper installed"
+  ok "Replaced ${INSTALL_DIR}/claude symlink with consent wrapper"
 else
   info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
 fi
