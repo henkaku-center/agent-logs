@@ -8,6 +8,18 @@ import { randomInt } from "crypto";
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 
+// CORS for portal (GitHub Pages → Cloud Run)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin === "https://agent-logs.chibatech.dev" || origin?.startsWith("http://localhost")) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 const bigquery = new BigQuery();
 const firestore = new Firestore();
 
@@ -444,6 +456,222 @@ app.delete("/admin/allowlist/email", async (req, res) => {
   const list = doc.data().list.filter((e) => e !== allow_email.toLowerCase().trim());
   await ref.set({ list });
   res.json({ status: "ok", emails: list });
+});
+
+/* ── Portal endpoints ── */
+
+/** GET /portal/sessions — list student's sessions grouped by project */
+app.get("/portal/sessions", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  try {
+    const [rows] = await bigquery.query({
+      query: `SELECT project_path, session_id,
+                     MIN(timestamp) AS first_timestamp,
+                     MAX(timestamp) AS last_timestamp,
+                     COUNT(*) AS record_count,
+                     COUNTIF(record_type='user') AS user_count,
+                     COUNTIF(record_type='assistant') AS assistant_count
+              FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
+              WHERE student_id = @student_id
+              GROUP BY project_path, session_id
+              ORDER BY MIN(timestamp) DESC`,
+      params: { student_id: email },
+    });
+
+    const projects = {};
+    for (const row of rows) {
+      if (!projects[row.project_path]) projects[row.project_path] = [];
+      projects[row.project_path].push({
+        session_id: row.session_id,
+        first_timestamp: row.first_timestamp?.value,
+        last_timestamp: row.last_timestamp?.value,
+        record_count: row.record_count,
+        user_count: row.user_count,
+        assistant_count: row.assistant_count,
+      });
+    }
+
+    res.json({
+      projects: Object.entries(projects).map(([path, sessions]) => ({
+        project_path: path,
+        sessions,
+      })),
+    });
+  } catch (err) {
+    console.error("Sessions query error:", err);
+    res.status(500).json({ error: "Failed to fetch sessions" });
+  }
+});
+
+/** GET /portal/consent — get research-use consent state */
+app.get("/portal/consent", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const doc = await firestore.doc(`consent/${email}`).get();
+  if (!doc.exists) {
+    return res.json({ research_use: false, status: "none" });
+  }
+  const data = doc.data();
+  res.json({
+    research_use: data.research_use || false,
+    status: data.status || "none",
+    consented_at: data.consented_at?.toDate?.()?.toISOString() || null,
+  });
+});
+
+/** POST /portal/consent — toggle research-use consent */
+app.post("/portal/consent", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const { research_use } = req.body;
+  if (typeof research_use !== "boolean") {
+    return res.status(400).json({ error: "research_use must be a boolean" });
+  }
+
+  const ref = firestore.doc(`consent/${email}`);
+  const doc = await ref.get();
+  const existing = doc.exists ? doc.data() : {};
+
+  const update = {
+    research_use,
+    status: research_use ? "opted_in" : "opted_out",
+    status_changed_at: new Date(),
+  };
+
+  if (research_use && !existing.anon_id) {
+    const { randomUUID } = await import("crypto");
+    update.anon_id = randomUUID();
+    update.consented_at = new Date();
+  }
+
+  await ref.set({ ...existing, ...update }, { merge: true });
+
+  res.json({ status: "ok", research_use, anon_id: existing.anon_id || update.anon_id || null });
+});
+
+/** GET /portal/survey — get survey status and any existing responses */
+app.get("/portal/survey", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  // Which surveys are unlocked
+  const configDoc = await firestore.doc("survey_config/current").get();
+  const unlocked = configDoc.exists ? configDoc.data().unlocked || [] : ["pre_study"];
+
+  // Get student's responses
+  const surveys = {};
+  for (const surveyId of ["pre_study", "mid_semester", "post_study"]) {
+    if (!unlocked.includes(surveyId)) {
+      surveys[surveyId] = { status: "locked" };
+      continue;
+    }
+
+    const respDoc = await firestore.doc(`survey_responses/${email}/${surveyId}/data`).get();
+    if (!respDoc.exists) {
+      surveys[surveyId] = { status: "not_started", responses: null };
+    } else {
+      const data = respDoc.data();
+      surveys[surveyId] = {
+        status: data.status || "in_progress",
+        responses: data.responses || {},
+        completed_at: data.completed_at?.toDate?.()?.toISOString() || null,
+      };
+    }
+  }
+
+  res.json({ surveys });
+});
+
+/** POST /portal/survey — submit or update survey responses */
+app.post("/portal/survey", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const { survey_id, responses, completed } = req.body;
+  if (!survey_id || !responses) {
+    return res.status(400).json({ error: "Missing survey_id or responses" });
+  }
+
+  // Check survey is unlocked
+  const configDoc = await firestore.doc("survey_config/current").get();
+  const unlocked = configDoc.exists ? configDoc.data().unlocked || [] : ["pre_study"];
+  if (!unlocked.includes(survey_id)) {
+    return res.status(403).json({ error: "This survey is not currently available" });
+  }
+
+  const ref = firestore.doc(`survey_responses/${email}/${survey_id}/data`);
+  const existing = (await ref.get()).data() || {};
+
+  const update = {
+    responses: { ...(existing.responses || {}), ...responses },
+    updated_at: new Date(),
+    status: completed ? "completed" : "in_progress",
+  };
+
+  if (!existing.started_at) update.started_at = new Date();
+  if (completed) update.completed_at = new Date();
+
+  await ref.set(update, { merge: true });
+
+  res.json({ status: "ok", survey_id, survey_status: update.status });
+});
+
+/** POST /portal/delete-request — request data deletion */
+app.post("/portal/delete-request", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const { project_path, session_id, reason } = req.body;
+  if (!project_path) return res.status(400).json({ error: "Missing project_path" });
+
+  const ref = firestore.collection("delete_requests").doc();
+  await ref.set({
+    student_id: email,
+    project_path,
+    session_id: session_id || null,
+    reason: reason || "",
+    state: "pending",
+    created_at: new Date(),
+  });
+
+  res.json({ status: "ok", request_id: ref.id, state: "pending" });
+});
+
+/** GET /portal/delete-requests — list student's delete requests */
+app.get("/portal/delete-requests", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+
+  const snapshot = await firestore.collection("delete_requests")
+    .where("student_id", "==", email)
+    .orderBy("created_at", "desc")
+    .get();
+
+  const requests = snapshot.docs.map((doc) => ({
+    request_id: doc.id,
+    ...doc.data(),
+    created_at: doc.data().created_at?.toDate?.()?.toISOString(),
+  }));
+
+  res.json({ requests });
 });
 
 /** Health check */

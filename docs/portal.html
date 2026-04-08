@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Student Portal — Agent Logs</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container">
+      <a href="https://student.chibatech.dev/">
+        <img src="assets/sds-logo-horizontal-white.svg" alt="Chiba Tech School of Design & Science" class="logo">
+      </a>
+      <nav>
+        <a href="index.html">Documentation</a>
+        <span class="auth-bar" id="auth-bar"></span>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <h1>Student Portal</h1>
+      <p class="subtitle">Manage your consent settings, view session logs, and complete course surveys.</p>
+    </div>
+  </section>
+
+  <!-- Login (shown when not authenticated) -->
+  <section class="section" id="login-section">
+    <div class="container">
+      <h2>Log In</h2>
+      <p>Use the same email as your Claude account.</p>
+
+      <div id="login-step-email">
+        <label for="login-email"><strong>Email address</strong></label>
+        <input type="email" id="login-email" class="form-input" placeholder="you@chibatech.dev" autocomplete="email">
+        <button class="btn btn-primary" id="login-send-btn">Send verification code</button>
+        <p class="form-error" id="login-error"></p>
+      </div>
+
+      <div id="login-step-code" style="display:none">
+        <p id="login-code-msg"></p>
+        <label for="login-code"><strong>Verification code</strong></label>
+        <input type="text" id="login-code" class="form-input" placeholder="123456" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+        <button class="btn btn-primary" id="login-verify-btn">Verify</button>
+        <p class="form-error" id="verify-error"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Portal (shown when authenticated) -->
+  <div id="portal" style="display:none">
+
+    <!-- Tab navigation -->
+    <nav class="portal-tabs">
+      <div class="container">
+        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="consent">Consent</button>
+        <button class="tab" data-tab="survey">Survey</button>
+        <button class="tab" data-tab="sessions">Sessions</button>
+      </div>
+    </nav>
+
+    <!-- Dashboard -->
+    <section class="section" id="tab-dashboard">
+      <div class="container">
+        <h2>Dashboard</h2>
+        <div class="status-grid" id="dashboard-cards"></div>
+      </div>
+    </section>
+
+    <!-- Consent -->
+    <section class="section" id="tab-consent" style="display:none">
+      <div class="container">
+        <h2>Research Consent</h2>
+        <div class="info-box">
+          <p><strong>Educational-use</strong> — Your session logs are shared with instructors for grading and feedback. This is a requirement of your enrolled course.</p>
+          <p style="margin-bottom:0"><strong>Research-use</strong> — Anonymised session logs are used for academic research on AI-assisted learning. This is voluntary.</p>
+        </div>
+
+        <div class="consent-toggle-box" id="consent-toggle-box">
+          <div class="consent-status" id="consent-status"></div>
+          <label class="toggle">
+            <input type="checkbox" id="research-toggle">
+            <span class="toggle-slider"></span>
+          </label>
+          <span id="consent-label">Opt in to Research-use</span>
+        </div>
+        <p class="form-hint">You can change this at any time. Data flagged for deletion is removed one month after the course ends.</p>
+      </div>
+    </section>
+
+    <!-- Survey -->
+    <section class="section" id="tab-survey" style="display:none">
+      <div class="container">
+        <h2>Course Survey</h2>
+        <div id="survey-container"></div>
+      </div>
+    </section>
+
+    <!-- Sessions -->
+    <section class="section" id="tab-sessions" style="display:none">
+      <div class="container">
+        <h2>Session Logs</h2>
+        <p>Your synced Claude Code sessions, grouped by project.</p>
+        <div id="sessions-container"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <span>
+        <a href="https://chibatech.jp/">Chiba Tech</a> &middot;
+        <a href="https://sds.chibatech.dev/">Graduate School of Design & Science</a> &middot;
+        <a href="https://henkaku.center">Henkaku Center</a>
+      </span>
+      <a href="https://github.com/henkaku-center/agent-logs">GitHub</a>
+    </div>
+  </footer>
+
+  <script src="portal.js"></script>
+</body>
+</html>
