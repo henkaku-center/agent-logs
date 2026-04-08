@@ -138,7 +138,7 @@ async function sendVerificationEmail(to, code) {
   ].join("\n");
 
   const message = [
-    `From: Chiba Tech Agent Logs <${GMAIL_SENDER}>`,
+    `From: Agent Logs <${GMAIL_SENDER}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
     "Content-Type: text/plain; charset=utf-8",
