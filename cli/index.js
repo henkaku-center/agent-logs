@@ -235,13 +235,14 @@ switch (command) {
     const cyanBold = (s) => `\x1b[1;36m${s}\x1b[0m`;
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-    const edu = projects.shared.includes(cwd);
-    const res = edu && projects.tier_b;
+    // TODO: detect consent tiers from portal once available
+    const edu = true;
+    const res = false;
 
-    const eduLabel = edu ? cyanBold("Educational-use") : dim("Educational-use");
-    const resLabel = res ? cyanBold("Research-use") : dim("Research-use");
+    const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
+    const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
 
-    console.log(`${cyanBold("Agent Logs")} sharing with ChibaTech for ${eduLabel} ${resLabel}`);
+    console.log(`${cyanBold("Agent Logs")} sharing with ChibaTech for the following: ${eduLabel} ${resLabel}`);
     break;
   }
 
