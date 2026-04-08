@@ -65,13 +65,14 @@ fi
 WRAPPER_LINE='claude() { agent-logs consent-dialog || return 0; command claude "$@"; }'
 MARKER="# agent-logs wrapper"
 
-for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
-  [ -f "$RC" ] || continue
-  # Remove old wrapper if present, then add fresh
-  sed -i "/$MARKER/d" "$RC"
-  printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
-  ok "Wrapper installed at ${RC}"
-  # shellcheck disable=SC1090
-  . "$RC" 2>/dev/null || true
-done
+case "$(basename "$SHELL")" in
+  zsh)  RC="$HOME/.zshrc" ;;
+  *)    RC="$HOME/.bashrc" ;;
+esac
+
+sed -i "/$MARKER/d" "$RC" 2>/dev/null || true
+printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
+ok "Wrapper installed at ${RC}"
+# shellcheck disable=SC1090
+. "$RC" 2>/dev/null || true
 printf '\033[1;32m✓\033[0m Installation complete. Run \033[38;2;227;137;62mclaude\033[0m to get started.\n'
