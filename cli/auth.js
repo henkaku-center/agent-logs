@@ -46,14 +46,17 @@ export function getToken() {
 export async function login() {
   const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
   const cols = process.stdout.columns || 89;
-  process.stdout.write("\x1b[s");
-  console.log(`${cyan("─".repeat(cols))}\n${cyan(" Agent Logging Authentication")}\n`);
+  let lines = 0;
+  const log = (msg) => { console.log(msg); lines += msg.split("\n").length; };
+
+  log(`${cyan("─".repeat(cols))}\n${cyan(" Agent Logging Authentication")}\n`);
 
   let email = readClaudeEmail();
   if (email) {
-    console.log(` Using Claude account: ${email}`);
+    log(` Using Claude account: ${email}`);
   } else {
     email = await prompt(" Email address: ");
+    lines += 1;
     if (!email || !email.includes("@")) {
       throw new Error("Invalid email address");
     }
@@ -71,10 +74,11 @@ export async function login() {
       `Claude account not recognized.\n Contact \x1b[4;34mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.\n Otherwise use \x1b[1magent-logs uninstall\x1b[0m to remove this tool.`
     );
   }
-  console.log(` Verification code sent to ${email}`);
+  log(` Verification code sent to ${email}`);
 
   // Prompt for code
   const code = await prompt(" Enter the 6-digit code from your email: ");
+  lines += 1;
   if (!code) {
     throw new Error("No code entered");
   }
@@ -94,6 +98,6 @@ export async function login() {
   // Store token
   writeToken({ token: result.token, email: result.email });
   // Clear auth dialog
-  process.stdout.write("\x1b[u\x1b[J");
+  process.stdout.write(`\x1b[${lines}A\x1b[J`);
   return { email: result.email };
 }

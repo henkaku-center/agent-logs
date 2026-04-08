@@ -187,9 +187,7 @@ switch (command) {
     // Unknown folder — show consent dialog
     const cols = process.stdout.columns || 89;
     const cyanLine = cyan("─".repeat(cols));
-    // Save cursor position so we can clear the dialog after
-    process.stdout.write("\x1b[s");
-    console.log([
+    const bannerLines = [
       cyanLine,
       cyan(` Agent Logging Consent`),
       ``,
@@ -201,12 +199,14 @@ switch (command) {
       ``,
       ` You can change this anytime with ${blue("agent-logs withdraw")}`,
       ` ${dim("└")} ${dim(projects.student_id)}`,
-    ].join("\n"));
+    ];
+    console.log(bannerLines.join("\n"));
 
     const choice = await promptConsent();
 
-    // Clear dialog: restore cursor position and erase everything below
-    process.stdout.write("\x1b[u\x1b[J");
+    // Clear dialog: banner lines + 1 (console.log newline) + 5 (prompt lines)
+    const totalLines = bannerLines.length + 1 + 5;
+    process.stdout.write(`\x1b[${totalLines}A\x1b[J`);
 
     if (choice === true) {
       projects.shared.push(cwd);
