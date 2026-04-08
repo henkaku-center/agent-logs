@@ -382,12 +382,14 @@ Commands:
 
     // Remove claude wrapper function from shell configs
     const { readFileSync: readF, writeFileSync: writeF } = await import("fs");
+    const removedFrom = [];
     for (const rc of [join(homedir(), ".bashrc"), join(homedir(), ".zshrc")]) {
       try {
         const content = readF(rc, "utf8");
         const filtered = content.split("\n").filter((l) => !l.includes("# agent-logs wrapper")).join("\n");
         if (filtered !== content) {
           writeF(rc, filtered);
+          removedFrom.push(rc);
           console.log(`Removed claude wrapper from ${rc}`);
         }
       } catch {
@@ -396,6 +398,9 @@ Commands:
     }
 
     console.log("\nUninstall complete. Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
+    if (removedFrom.length > 0) {
+      console.log(`\nRun \x1b[1msource ${removedFrom[0]}\x1b[0m to finish.`);
+    }
     break;
   }
 
