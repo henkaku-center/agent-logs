@@ -185,19 +185,21 @@ switch (command) {
     if (projects.shared.includes(cwd) || projects.withdrawn.includes(cwd)) break;
 
     // Unknown folder — show consent dialog
+    const cols = process.stdout.columns || 89;
+    const cyanLine = cyan("─".repeat(cols));
     console.log([
-      line,
-      `  ${bold("Chiba Tech")} ${dim("· Agent Logs")}`,
+      cyanLine,
+      cyan(` Agent Logging Consent`),
       ``,
-      `  ${bold("Share session logs for this workspace?")}`,
-      `  ${cyan(cwd)}`,
+      ` ${bold("Share session logs for this workspace?")}`,
+      ` ${dim(cwd)}`,
       ``,
-      `  Session logs from this folder will be shared with`,
-      `  your course instructors for grading and feedback.`,
+      ` Session logs from this folder will be shared with`,
+      ` your course instructors for grading and feedback.`,
       ``,
-      `  You can change this anytime with ${blue("agent-logs withdraw")}`,
-      `  ${dim("└")} ${dim(projects.student_id)}`,
-      line,
+      ` You can change this anytime with ${blue("agent-logs withdraw")}`,
+      ` ${dim("└")} ${dim(projects.student_id)}`,
+      cyanLine,
     ].join("\n"));
 
     const choice = await promptConsent();
