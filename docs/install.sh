@@ -76,5 +76,4 @@ else
   info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
 fi
 
-printf '\n'
 ok "Installation complete. Run 'claude' to get started."
