@@ -8,7 +8,7 @@ INSTALL_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${HOME}/.config/agent-logs"
 
 info()  { printf '\033[1;34m→\033[0m %s\n' "$1"; }
-ok()    { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
+ok()    { printf '\033[1;32m✓\033[0m %b\n' "$1"; }
 err()   { printf '\033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 # ── Check prerequisites ──
