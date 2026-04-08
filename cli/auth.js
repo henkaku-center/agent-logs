@@ -44,11 +44,15 @@ export function getToken() {
  * 4. Server verifies, returns JWT
  */
 export async function login() {
+  const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+  const cols = process.stdout.columns || 89;
+  console.log(`${cyan("─".repeat(cols))}\n${cyan(" Agent Logging Authentication")}\n`);
+
   let email = readClaudeEmail();
   if (email) {
-    console.log(`Using Claude account: ${email}`);
+    console.log(` Using Claude account: ${email}`);
   } else {
-    email = await prompt("Email address: ");
+    email = await prompt(" Email address: ");
     if (!email || !email.includes("@")) {
       throw new Error("Invalid email address");
     }
