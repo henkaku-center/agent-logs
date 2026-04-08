@@ -4,7 +4,7 @@ System for collecting Claude Code session logs from students enrolled in APS-I a
 
 ## Overview
 
-Students receive Claude Enterprise seats provisioned under the `@chibatech.dev` organization. CIT students use their `@chibatech.dev` Google accounts. External students are allocated a seat using their preferred email address and authenticate with that same address throughout. Claude Code stores session logs locally as JSONL files, appending entries in batches (flushed every 100ms). A lightweight CLI tool (`agent-logs`) installed on student machines reads directly from these files and syncs new lines from shared projects to GCP via Claude Code hooks — no cron job or background process required. A serverless ingestion service (Cloud Run) writes identified logs to BigQuery and, for Tier B participants, applies real-time Phase 1 structural anonymization and writes anonymized copies to a separate BigQuery research dataset. Consent state, identity mapping, and dedup tracking are stored in Firestore. The entire backend scales to zero — no always-on instances.
+Students receive Claude Enterprise seats provisioned under the `@chibatech.dev` organization. CIT students use their `@chibatech.dev` Google accounts. External students are allocated a seat using their preferred email address and authenticate with that same address throughout. Claude Code stores session logs locally as JSONL files, appending entries in batches (flushed every 100ms). A lightweight CLI tool (`agent-logs`) installed on student machines reads directly from these files and syncs new lines from shared projects to GCP via Claude Code hooks — no cron job or background process required. A serverless ingestion service (Cloud Run) writes identified logs to BigQuery and, for Research-use participants, applies real-time Phase 1 structural anonymization and writes anonymized copies to a separate BigQuery research dataset. Consent state, identity mapping, and dedup tracking are stored in Firestore. The entire backend scales to zero — no always-on instances.
 
 ```
 Student machine                          GCP (@chibatech.dev)
@@ -39,7 +39,7 @@ Claude Code starts in new directory
                    BigQuery dataset      BigQuery dataset       Firestore
                    `course.logs`         `research.logs`      (consent, mapping,
                    (identified)          (anonymous)            offset ledger)
-                   [all students]        [Tier B only]
+                   [all students]        [Research-use only]
 ```
 
 ### Serverless data architecture
@@ -49,7 +49,7 @@ All backend services scale to zero. No always-on instances.
 | Service | Role | Why this service |
 |---------|------|------------------|
 | **BigQuery** (`course` dataset) | Identified session logs | Append-native (Storage Write API), SQL queries for instructors, 2 TiB/month free ingestion |
-| **BigQuery** (`research` dataset) | Anonymized session logs (Tier B) | Same benefits; separate dataset with restricted IAM; Phase 1 anonymization applied at write time |
+| **BigQuery** (`research` dataset) | Anonymized session logs (Research-use) | Same benefits; separate dataset with restricted IAM; Phase 1 anonymization applied at write time |
 | **Firestore** | Consent state, identity mapping, offset ledger | Low-latency transactional lookups, pay-per-operation, no instance to manage |
 | **Cloud Run** | Ingestion endpoint | Scales to zero between uploads, ~$10/3 months at expected load |
 
@@ -190,7 +190,7 @@ agent-logs login
 ```
 
 - Authenticates with the student's Google account (OAuth flow, stores refresh token). This must be the same email address used for the student's Claude Enterprise seat.
-- Fetches the student's global consent status from the server (Tier B enrollment, if any)
+- Fetches the student's global consent status from the server (Research-use enrollment, if any)
 - Registers four Claude Code hooks in `~/.claude/settings.json` (see hook configuration below)
 - Creates `~/.config/agent-logs/projects.yaml`
 
@@ -218,19 +218,19 @@ The student is expected to share coursework project directories; the syllabus st
 
 #### Project in `shared`
 
-The exact text is **draft — not final**. This message is the primary ongoing touchpoint with students and must balance brevity with clarity about trade-offs (sharing, insights, privacy, coursework expectations, Tier B status). It will be refined through user testing.
+The exact text is **draft — not final**. This message is the primary ongoing touchpoint with students and must balance brevity with clarity about trade-offs (sharing, insights, privacy, coursework expectations, Research-use status). It will be refined through user testing.
 
 Draft example:
 
 ```
 Chiba Tech — session logs are being shared
   [x] Course purposes (grading and feedback)
-  [x] Anonymised data for research         ← only if Tier B opted in
+  [x] Anonymised data for research         ← only if Research-use opted in
 
 Run `agent-logs withdraw` to stop sharing logs for this project.
 ```
 
-The message reflects the student's global consent state (cached locally from the server during `agent-logs login`). "Course purposes" is always checked (a property of enrollment). "Anonymised data for research" is checked only if Tier B opted in via the web portal.
+The message reflects the student's global consent state (cached locally from the server during `agent-logs login`). "Course purposes" is always checked (a property of enrollment). "Anonymised data for research" is checked only if Research-use opted in via the web portal.
 
 #### Project in `withdrawn`
 
@@ -251,7 +251,7 @@ agent-logs consent        # start sharing logs for the current project directory
 agent-logs withdraw       # stop sharing logs for the current project directory
 ```
 
-The CLI is intentionally minimal. Project-level consent is managed here. Tier B enrollment, session browsing, delete requests, and insight reports are handled through the web portal.
+The CLI is intentionally minimal. Project-level consent is managed here. Research-use enrollment, session browsing, delete requests, and insight reports are handled through the web portal.
 
 - **`agent-logs consent`** moves the current directory to the `shared` list in `projects.yaml` (from `withdrawn` or not-in-file). This is how a student opts back in after withdrawing, or explicitly shares a project without waiting for the next session start prompt.
 - **`agent-logs withdraw`** moves the current directory from `shared` to `withdrawn`. The project will not be synced and the consent prompt will not reappear. Data collected before withdrawal remains on the server — the student can submit a delete request via the portal to remove it.
@@ -322,7 +322,7 @@ Four hooks, four roles:
 
 ```yaml
 student_id: tanaka@chibatech.dev   # set during agent-logs login
-tier_b: true                        # cached from server, refreshed on login
+research_use: true                        # cached from server, refreshed on login
 shared:
   - /home/tanaka/coursework/web3-project
   - /home/tanaka/coursework/aps-studio
@@ -423,8 +423,8 @@ Content-Type: application/json
    - **Offset < server offset** (duplicate/re-upload after cursor reset): skip lines the server already has, accept only new lines beyond server offset. This makes ingestion idempotent.
    - **Offset > server offset** (gap — should not happen with append-only files): reject the upload and return the server's current offset so the client can re-align.
 3. **Write to `course.logs`** (BigQuery, identified): insert rows via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row with columns: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data` (the original JSON line as a STRING or JSON column).
-4. **Check Tier B consent**: read consent state from Firestore (`consent/{student_id}`)
-5. **If Tier B**: look up anonymous ID from Firestore (`mapping/{student_id}`), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `student_id` and structural fields scrubbed.
+4. **Check Research-use consent**: read consent state from Firestore (`consent/{student_id}`)
+5. **If Research-use**: look up anonymous ID from Firestore (`mapping/{student_id}`), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `student_id` and structural fields scrubbed.
 6. **Update offset ledger**: write the new offset to Firestore (`offsets/{student_id}/{session_id}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent sessions).
 7. **Return** success with sync state for client re-alignment:
    ```json
@@ -449,7 +449,7 @@ Selective omission remains possible (a student could decline to share a project,
 |----------|-------------|---------|--------|
 | BigQuery `course.logs` | `agent-logs-course` | Identified session logs | Course instructors (BigQuery Data Viewer) |
 | BigQuery `research.logs` | `agent-logs-research` | Anonymous session logs | Research team only (BigQuery Data Viewer) |
-| Firestore `consent/` | `agent-logs-admin` | Consent records, Tier B status | Ingestion service account only |
+| Firestore `consent/` | `agent-logs-admin` | Consent records, Research-use status | Ingestion service account only |
 | Firestore `mapping/` | `agent-logs-admin` | Student identity ↔ anonymous ID | Ingestion service account only |
 | Firestore `offsets/` | `agent-logs-admin` | Per-session offset ledger for dedup | Ingestion service account only |
 
@@ -512,7 +512,7 @@ The mapping table is deleted only after Phase 2 passes both verification stages.
 
 ### Two independent consent dimensions
 
-**Project-level sharing** and **Tier B (research) opt-in** are independent. Project sharing controls whether logs leave the student's machine. Tier B controls whether anonymized copies go to the research system.
+**Project-level sharing** and **Research-use (research) opt-in** are independent. Project sharing controls whether logs leave the student's machine. Research-use controls whether anonymized copies go to the research system.
 
 ### Project-level sharing
 
@@ -521,13 +521,13 @@ Every time Claude Code starts a new session in an unknown directory, the `Sessio
 The message is identical for all directories. There is no distinction between coursework and non-coursework projects at consent time.
 
 - **For coursework projects**: the syllabus states that session log sharing is expected for coursework. Instructors filter the course dataset by known assignment repo names (e.g., `web3-assignment-*`, `aps-studio-*`) when grading. If a student chose not to share a coursework project, the instructor simply doesn't have those logs — equivalent to not submitting an assignment.
-- **For non-coursework projects**: shared logs land in the course dataset but instructors ignore them (they don't match any assignment pattern). If the student is Tier B, anonymized copies go to the research dataset.
+- **For non-coursework projects**: shared logs land in the course dataset but instructors ignore them (they don't match any assignment pattern). If the student is Research-use, anonymized copies go to the research dataset.
 
 Students can withdraw project sharing at any time by running `agent-logs withdraw` in the project directory. Data collected before withdrawal is retained on the server. To remove previously collected data, students must submit a delete request via the web portal (see Delete requests section). To re-share a withdrawn project, the student runs `agent-logs consent` in that directory.
 
-### Tier A (instruction)
+### Educational-use (instruction)
 
-Tier A is not a consent action — it is a property of course enrollment, disclosed in the syllabus. It means: instructors may access identified session logs from coursework projects for grading and feedback. This applies to all enrolled students for projects that match coursework repo patterns.
+Educational-use is not a consent action — it is a property of course enrollment, disclosed in the syllabus. It means: instructors may access identified session logs from coursework projects for grading and feedback. This applies to all enrolled students for projects that match coursework repo patterns.
 
 #### Pedagogical justification
 
@@ -539,23 +539,23 @@ Session log review enables feedback on risks that students may not recognize in 
 
 #### Scope and withdrawal
 
-Tier A cannot be "withdrawn" independently. A student who does not want their coursework logs used for grading would need to stop using Claude Code for coursework (and accept the grading consequences) or withdraw from the course. This is consistent with other competency-based courses where the demonstration of the skill *is* the assessment — a student in a clinical rotation cannot opt out of being observed and still pass the practicum.
+Educational-use cannot be "withdrawn" independently. A student who does not want their coursework logs used for grading would need to stop using Claude Code for coursework (and accept the grading consequences) or withdraw from the course. This is consistent with other competency-based courses where the demonstration of the skill *is* the assessment — a student in a clinical rotation cannot opt out of being observed and still pass the practicum.
 
-### Tier B (research)
+### Research-use (research)
 
-Tier B is an explicit opt-in via the web portal. It controls whether anonymized copies of shared session logs go to the research system. Tier B applies globally — all shared projects, coursework and non-coursework alike. The incentive to opt in is the meta-insights report, which is only visible to Tier B participants.
+Research-use is an explicit opt-in via the web portal. It controls whether anonymized copies of shared session logs go to the research system. Research-use applies globally — all shared projects, coursework and non-coursework alike. The incentive to opt in is the meta-insights report, which is only visible to Research-use participants.
 
-**Opt-in**: the student toggles Tier B on in the web portal. This triggers a transfer of all their existing shared session logs (from date of consent onward) to the research dataset, with Phase 1 structural anonymization applied. New logs are anonymized and copied to the research dataset at ingestion time going forward.
+**Opt-in**: the student toggles Research-use on in the web portal. This triggers a transfer of all their existing shared session logs (from date of consent onward) to the research dataset, with Phase 1 structural anonymization applied. New logs are anonymized and copied to the research dataset at ingestion time going forward.
 
-**Opt-out**: the student toggles Tier B off in the web portal at any time. New logs stop being copied to the research dataset immediately. The meta-insights report becomes inaccessible. Existing research data rows are **flagged as revoked** (`revoked = true`) and become immediately non-queryable — all research queries use authorized views that filter `WHERE revoked = false`. The student sees the effect of their opt-out right away.
+**Opt-out**: the student toggles Research-use off in the web portal at any time. New logs stop being copied to the research dataset immediately. The meta-insights report becomes inaccessible. Existing research data rows are **flagged as revoked** (`revoked = true`) and become immediately non-queryable — all research queries use authorized views that filter `WHERE revoked = false`. The student sees the effect of their opt-out right away.
 
-If the student toggles Tier B back on before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset. No data was lost and no redundant transfer is needed.
+If the student toggles Research-use back on before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset. No data was lost and no redundant transfer is needed.
 
 **Final deletion**: at 1 month post-course, all rows still flagged `revoked = true` are permanently deleted along with the mapping table. Students who are still opted in retain their research data for the 5-year research retention period.
 
 ### Consent state matrix
 
-| Project shared? | Tier B? | Course dataset | Research dataset | Instructor sees | Researcher sees |
+| Project shared? | Research-use? | Course dataset | Research dataset | Instructor sees | Researcher sees |
 |-----------------|---------|---------------|-----------------|-----------------|-----------------|
 | Yes | No | Identified logs | Nothing | Coursework projects only (filtered by repo name) | Nothing |
 | Yes | Yes | Identified logs | Anonymized copy | Coursework projects only | All shared projects (anonymous) |
@@ -566,9 +566,9 @@ If the student toggles Tier B back on before course end, the revoked flag is cle
 | Action | Course dataset | Research dataset | Available when | Reversible? |
 |--------|--------------|----------------|----------------|-------------|
 | **Withdraw project sharing** (`agent-logs withdraw`) | Stop syncing new sessions. Existing data retained (submit a delete request to remove). | Stop syncing new copies. Existing research data flagged `revoked` (non-queryable). | Anytime | Yes — `agent-logs consent` re-shares the project |
-| **Tier B opt-out** (web portal) | No effect | New copies stop. Existing rows flagged `revoked` (non-queryable). Permanently deleted 1 month post-course if still revoked. | Anytime | Yes — re-opting in clears the revoked flag |
+| **Research-use opt-out** (web portal) | No effect | New copies stop. Existing rows flagged `revoked` (non-queryable). Permanently deleted 1 month post-course if still revoked. | Anytime | Yes — re-opting in clears the revoked flag |
 | **Delete request** (session/project) | Specified data deleted | Specified data deleted | Within withdrawal window (course + 1 month) | No — deletion is permanent |
-| **Drop the course** | Logs stop being generated. Existing data retained per retention policy. | No automatic effect. Student can still opt out of Tier B. | Anytime | N/A |
+| **Drop the course** | Logs stop being generated. Existing data retained per retention policy. | No automatic effect. Student can still opt out of Research-use. | Anytime | N/A |
 
 ---
 
@@ -634,11 +634,11 @@ Delete requests can target:
 
 Delete requests are available **within the withdrawal window** (course duration + 1 month). After the mapping table is deleted, the system cannot identify which anonymous ID belongs to the requesting student, so targeted deletion from the research dataset is no longer possible.
 
-After the withdrawal window closes, the only mechanism for removing research data is a petition to delete the **entire research dataset**, which requires unanimous consensus among all Tier B participants. This is a governance process outside the scope of this system.
+After the withdrawal window closes, the only mechanism for removing research data is a petition to delete the **entire research dataset**, which requires unanimous consensus among all Research-use participants. This is a governance process outside the scope of this system.
 
-### Distinction from Tier B opt-out
+### Distinction from Research-use opt-out
 
-| | Delete request | Tier B opt-out |
+| | Delete request | Research-use opt-out |
 |--|---------------|-------------------|
 | Scope | Specific sessions or projects | All research data |
 | Available when | Within withdrawal window (course + 1 month) | Anytime during course |
@@ -653,7 +653,7 @@ After the withdrawal window closes, the only mechanism for removing research dat
 
 ### Requirements
 
-The consent form explains: what session logs are, how they are used under Tier A (instruction) and Tier B (research), that Tier A is part of the course and does not require separate consent, that Tier B is voluntary with no effect on grades, what the personal and meta-insights reports provide, how identity is protected, how and when to withdraw, what happens to data upon withdrawal, how long data is retained, and contact information for the PI and ethics committee. Available in Japanese and English. Plain language.
+The consent form explains: what session logs are, how they are used under Educational-use (instruction) and Research-use (research), that Educational-use is part of the course and does not require separate consent, that Research-use is voluntary with no effect on grades, what the personal and meta-insights reports provide, how identity is protected, how and when to withdraw, what happens to data upon withdrawal, how long data is retained, and contact information for the PI and ethics committee. Available in Japanese and English. Plain language.
 
 At acknowledgement, the system generates an anonymous identifier. Both researcher and student retain a copy of the signed consent form. Authentication for all portal actions (withdrawal, insight reports, delete requests) uses the same Google account used for the student's Claude Enterprise seat — `@chibatech.dev` for CIT students, or the external student's preferred email. Accounts are retained for 1 month after the course ends to match the withdrawal window.
 
@@ -664,13 +664,13 @@ At acknowledgement, the system generates an anonymous identifier. Both researche
 The consent form is presented on the web portal. Students encounter it either:
 
 - During the first class session, when the instructor explains the study and directs students to the portal
-- At any later point during the semester (late opt-in is permitted; only logs from date of consent onward are included in Tier B)
+- At any later point during the semester (late opt-in is permitted; only logs from date of consent onward are included in Research-use)
 
 The flow:
 
 1. **Student authenticates** to the portal with their Google account (the same account used for their Claude Enterprise seat)
 2. **Consent form displayed** in the student's preferred language (Japanese or English). The form covers all items required by the ethics application. It is a single scrollable document, not a multi-page wizard.
-3. **Student reads and acknowledges**. The acknowledgement is a single action: "I agree to Tier B participation." There is no partial consent — project-level sharing is managed separately through the `SessionStart` hook and `agent-logs withdraw`.
+3. **Student reads and acknowledges**. The acknowledgement is a single action: "I agree to Research-use participation." There is no partial consent — project-level sharing is managed separately through the `SessionStart` hook and `agent-logs withdraw`.
 4. **On acknowledgement**:
    - The system generates a random anonymous identifier (UUID v4, not derived from any personal attribute)
    - A PDF copy of the signed consent form (with timestamp and anonymous ID, but not student name) is generated for the student to download
@@ -708,20 +708,20 @@ Consent records are retained for five years from end of the research project, pe
 
 #### Late opt-in
 
-Students may opt into Tier B at any point during the semester via the web portal. The meta-insights report becomes visible immediately. On opt-in, the system:
+Students may opt into Research-use at any point during the semester via the web portal. The meta-insights report becomes visible immediately. On opt-in, the system:
 
 1. Records the consent timestamp
 2. Triggers a backfill: all existing shared session logs (from the consent date onward) are anonymized (Phase 1) and copied from the course dataset to the research dataset
 3. Going forward, new logs are anonymized and copied at ingestion time
 
-Logs generated before the consent date remain in the course dataset only (Tier A use).
+Logs generated before the consent date remain in the course dataset only (Educational-use use).
 
 #### Opt-out via portal
 
 1. Student logs into the portal with their Google account
 2. Navigates to Study Consent page
-3. Toggles Tier B off
-4. System confirms: "New logs will no longer be shared for research. Your existing research data is now hidden from all queries. You can re-enable Tier B at any time during the course to restore access. Data still flagged as revoked 1 month after course end will be permanently deleted."
+3. Toggles Research-use off
+4. System confirms: "New logs will no longer be shared for research. Your existing research data is now hidden from all queries. You can re-enable Research-use at any time during the course to restore access. Data still flagged as revoked 1 month after course end will be permanently deleted."
 5. Existing research data rows flagged `revoked = true` — immediately non-queryable via authorized views
 6. New logs stop being copied to the research dataset immediately
 7. Meta-insights report becomes inaccessible
@@ -730,13 +730,13 @@ Logs generated before the consent date remain in the course dataset only (Tier A
 
 If the student re-opts in before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset.
 
-After the mapping table is deleted (1 month post-course), Tier B changes are no longer possible — the system cannot determine which anonymous ID belongs to which student. Rows still flagged `revoked = true` at that point are permanently deleted. Students are informed of this deadline at consent time and reminded at end of course.
+After the mapping table is deleted (1 month post-course), Research-use changes are no longer possible — the system cannot determine which anonymous ID belongs to which student. Rows still flagged `revoked = true` at that point are permanently deleted. Students are informed of this deadline at consent time and reminded at end of course.
 
 ---
 
 ## Surveys
 
-Administered through the web portal. Responses stored in the consent database linked to anonymous ID (for Tier B participants) or student ID (for course-level feedback).
+Administered through the web portal. Responses stored in the consent database linked to anonymous ID (for Research-use participants) or student ID (for course-level feedback).
 
 The portal includes a periodic question on other AI tool usage (which tools, approximate relative usage) to assess completeness of session log coverage. This is part of the existing survey schedule, not an additional instrument.
 
@@ -748,7 +748,7 @@ Students receive insight reports as static HTML files, generated from their sess
 
 ### Personal insights report (all students)
 
-Available to any student who has shared at least one project, regardless of Tier B participation. Generated from the student's own data in the course dataset.
+Available to any student who has shared at least one project, regardless of Research-use participation. Generated from the student's own data in the course dataset.
 
 The report is generated by running `/insights` on the student's session data. Contents include:
 
@@ -761,9 +761,9 @@ The report is generated by running `/insights` on the student's session data. Co
 
 This report uses only the student's own data. No cohort data, no comparisons.
 
-### Meta-insights report (Tier B only)
+### Meta-insights report (Research-use only)
 
-Available only to students who have opted in to Tier B. Generated from the anonymized research dataset, combining the student's own patterns with aggregate cohort statistics. **This report is the primary incentive for Tier B participation** — it provides context that no individual student could derive from their own data alone.
+Available only to students who have opted in to Research-use. Generated from the anonymized research dataset, combining the student's own patterns with aggregate cohort statistics. **This report is the primary incentive for Research-use participation** — it provides context that no individual student could derive from their own data alone.
 
 Additional contents beyond the personal report:
 
@@ -794,9 +794,9 @@ Single web application serving both students and researchers.
 - **My projects**: list of shared and withdrawn projects, consent status for each (read-only — project consent is managed via CLI)
 - **My sessions**: browse synced sessions by project, with timestamps and summary stats (message count, duration, tokens)
 - **Personal insights**: view/download personal insights report — session patterns, tool usage, trends over time. Available to all students who share at least one project.
-- **Meta-insights** (Tier B only): view/download meta-insights report — the student's patterns placed in context of the cohort distribution across courses. This is the primary incentive for Tier B participation: context that no individual student could derive alone.
+- **Meta-insights** (Research-use only): view/download meta-insights report — the student's patterns placed in context of the cohort distribution across courses. This is the primary incentive for Research-use participation: context that no individual student could derive alone.
 - **Delete requests**: submit new requests, view status of pending requests
-- **Study consent**: Tier B opt-in/opt-out, global withdrawal
+- **Study consent**: Research-use opt-in/opt-out, global withdrawal
 - **Sync status**: last sync time, pending data, hook health
 
 ### Researcher view
@@ -827,18 +827,18 @@ Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to 
 
 Build out the student-facing and researcher-facing features described in this document. Add the research dataset with real-time Phase 1 anonymization.
 
-1. `SessionStart` hook refinement — full consent-check with status messages for shared/withdrawn/unknown projects, Tier B status display
+1. `SessionStart` hook refinement — full consent-check with status messages for shared/withdrawn/unknown projects, Research-use status display
 2. `agent-logs doctor` (full version) — check hooks registered, auth valid, server reachable, last sync status, BigQuery connectivity
 3. Install script (macOS, Linux, Windows)
 4. Cursor validation — tail hash continuity checks, re-upload on file truncation/rewrite
-5. Firestore consent and mapping collections — `consent/{anon_id}` for Tier B status, `mapping/{student_id}` for identity ↔ anonymous ID link, delete request tracking
-6. Tier B data pipeline — on ingestion, if student is Tier B: look up anonymous ID from `mapping/`, apply Phase 1 structural anonymization (`cwd`, project paths, `requestId`, `gitBranch`), write to BigQuery `research.logs`. Research dataset never contains unscrubbed structural fields.
-7. Backfill on late opt-in — when a student opts into Tier B mid-semester, anonymize and copy their existing `course.logs` rows to `research.logs` (from consent date onward)
+5. Firestore consent and mapping collections — `consent/{anon_id}` for Research-use status, `mapping/{student_id}` for identity ↔ anonymous ID link, delete request tracking
+6. Research-use data pipeline — on ingestion, if student is Research-use: look up anonymous ID from `mapping/`, apply Phase 1 structural anonymization (`cwd`, project paths, `requestId`, `gitBranch`), write to BigQuery `research.logs`. Research dataset never contains unscrubbed structural fields.
+7. Backfill on late opt-in — when a student opts into Research-use mid-semester, anonymize and copy their existing `course.logs` rows to `research.logs` (from consent date onward)
 8. Web portal — student views (projects, sessions, consent, delete requests, sync status) and researcher views (delete queue, sync monitoring, consent overview)
-9. Tier B opt-in/opt-out flow via web portal — opt-out flags research rows as `revoked` (non-queryable via authorized views), re-opt-in clears the flag
+9. Research-use opt-in/opt-out flow via web portal — opt-out flags research rows as `revoked` (non-queryable via authorized views), re-opt-in clears the flag
 10. BigQuery authorized views — all research queries go through views that filter `WHERE revoked = false`
 11. Personal insights report generation
-12. Meta-insights report generation (Tier B, cohort context)
+12. Meta-insights report generation (Research-use, cohort context)
 
 ### Milestone 3: security, privacy, and compliance
 
