@@ -9,7 +9,7 @@ import { sync } from "./sync.js";
 const command = process.argv[2];
 
 // Commands that don't require authentication
-const PUBLIC_COMMANDS = new Set(["login", "uninstall", undefined]);
+const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-check", "sync", undefined]);
 
 if (!PUBLIC_COMMANDS.has(command)) {
   const token = readToken();
@@ -96,18 +96,63 @@ switch (command) {
       // Use process.cwd() as fallback
     }
 
-    if (!projects.student_id) {
-      console.log("agent-logs: not logged in. Run `agent-logs login` to set up.");
+    const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+    const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+    const green = (s) => `\x1b[32m${s}\x1b[0m`;
+    const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
+    const blue = (s) => `\x1b[34m${s}\x1b[0m`;
+
+    const line = dim("─".repeat(52));
+
+    const tokenData = readToken();
+    if (!tokenData?.token) {
+      console.log([
+        line,
+        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
+        `  ${yellow("⚠")} Not logged in`,
+        `  Run ${blue("agent-logs login")} to set up session logging.`,
+        line,
+      ].join("\n"));
       break;
     }
 
     if (projects.shared.includes(hookCwd)) {
-      const tierB = projects.tier_b ? "\n  [x] Anonymised data for research" : "";
-      console.log(`Chiba Tech — session logs are being shared\n  [x] Course purposes (grading and feedback)${tierB}\n\nRun \`agent-logs withdraw\` to stop sharing logs for this project.`);
+      const lines = [
+        line,
+        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
+        `  ${green("●")} Session logs are being shared`,
+        `  ${dim("├")} ${green("✓")} Course purposes (grading and feedback)`,
+      ];
+      if (projects.tier_b) {
+        lines.push(`  ${dim("├")} ${green("✓")} Anonymised data for research`);
+      }
+      lines.push(
+        `  ${dim("└")} ${dim(projects.student_id)}`,
+        ``,
+        `  ${dim(`Run ${blue("agent-logs withdraw")} to stop sharing.`)}`,
+        line,
+      );
+      console.log(lines.join("\n"));
     } else if (projects.withdrawn.includes(hookCwd)) {
-      console.log("Session logs are not being shared. Run `agent-logs consent` to start sharing.");
+      console.log([
+        line,
+        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
+        `  ${yellow("○")} Session logs are ${bold("not")} being shared`,
+        `  ${dim("└")} ${dim(projects.student_id)}`,
+        ``,
+        `  ${dim(`Run ${blue("agent-logs consent")} to start sharing.`)}`,
+        line,
+      ].join("\n"));
     } else {
-      console.log("This project is not being shared with Chiba Tech. Run `agent-logs consent` to share.");
+      console.log([
+        line,
+        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
+        `  ${yellow("○")} This project is not being shared`,
+        `  ${dim("└")} ${dim(projects.student_id)}`,
+        ``,
+        `  ${dim(`Run ${blue("agent-logs consent")} to share this project.`)}`,
+        line,
+      ].join("\n"));
     }
     break;
   }
