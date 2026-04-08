@@ -199,7 +199,6 @@ switch (command) {
       ``,
       ` You can change this anytime with ${blue("agent-logs withdraw")}`,
       ` ${dim("└")} ${dim(projects.student_id)}`,
-      cyanLine,
     ].join("\n"));
 
     const choice = await promptConsent();
