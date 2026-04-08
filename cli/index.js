@@ -232,15 +232,16 @@ switch (command) {
       if (data.cwd) cwd = data.cwd;
     } catch {}
 
-    const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
-    const green = (s) => `\x1b[32m${s}\x1b[0m`;
+    const cyanBold = (s) => `\x1b[1;36m${s}\x1b[0m`;
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-    if (projects.shared.includes(cwd)) {
-      console.log(`${cyan("Agent Logs")} ${green("●")} Sharing enabled ${dim("·")} ${dim(projects.student_id)}`);
-    } else {
-      console.log(`${cyan("Agent Logs")} ${dim("○ Not sharing")}`);
-    }
+    const edu = projects.shared.includes(cwd);
+    const res = edu && projects.tier_b;
+
+    const eduLabel = edu ? cyanBold("Educational-use") : dim("Educational-use");
+    const resLabel = res ? cyanBold("Research-use") : dim("Research-use");
+
+    console.log(`${cyanBold("Agent Logs")} sharing with ChibaTech for ${eduLabel} ${resLabel}`);
     break;
   }
 
