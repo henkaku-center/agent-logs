@@ -95,7 +95,7 @@ switch (command) {
     console.log("Logging in to agent-logs...");
     try {
       const result = await login();
-      console.log(`Authenticated as: ${result.email}`);
+      console.log(` Authenticated as: ${result.email}`);
 
       // Initialize projects config
       const projects = readProjects();
@@ -107,7 +107,7 @@ switch (command) {
       console.log("Claude Code hooks registered.");
       console.log("Setup complete. Use `agent-logs consent` in a project directory to start sharing.");
     } catch (err) {
-      console.error(`Login failed: ${err.message}`);
+      console.error(` Login failed: ${err.message}`);
       process.exit(1);
     }
     break;
@@ -167,13 +167,13 @@ switch (command) {
     if (!readToken()?.token) {
       try {
         const result = await login();
-        console.log(`Authenticated as: ${result.email}`);
+        console.log(` Authenticated as: ${result.email}`);
         const p = readProjects();
         p.student_id = result.email;
         writeProjects(p);
         registerHooks();
       } catch (err) {
-        console.error(`Login failed: ${err.message}`);
+        console.error(` Login failed: ${err.message}`);
         process.exit(1);
       }
     }

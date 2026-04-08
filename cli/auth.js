@@ -59,7 +59,7 @@ export async function login() {
   }
 
   // Request verification code
-  console.log(`Sending verification code to ${email}...`);
+  console.log(` Sending verification code to ${email}...`);
   const sendResp = await fetch(`${INGESTION_URL}/auth/send-code`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -69,12 +69,12 @@ export async function login() {
   if (!sendResp.ok) {
     const body = await sendResp.json().catch(() => ({}));
     throw new Error(
-      `Claude account not recognized.\nContact \x1b[4;34mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.`
+      `Claude account not recognized.\n Contact \x1b[4;34mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.`
     );
   }
 
   // Prompt for code
-  const code = await prompt("Enter the 6-digit code from your email: ");
+  const code = await prompt(" Enter the 6-digit code from your email: ");
   if (!code) {
     throw new Error("No code entered");
   }
