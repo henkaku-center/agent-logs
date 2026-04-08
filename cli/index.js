@@ -239,12 +239,17 @@ switch (command) {
     const edu = true;
     const res = false;
 
-    const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
-    const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
+    if (projects.shared.includes(cwd)) {
+      const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
+      const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
 
-    console.log(`${cyanBold("Agent Logs")} sharing with ChibaTech for the following: ${eduLabel} ${resLabel}`);
-    console.log(`Visit \x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m to review consent settings`);
-    console.log(`Run \x1b[1magent-logs uninstall\x1b[0m to uninstall this tool`);
+      console.log(`${cyanBold("Agent Logs")} sharing for: ${eduLabel} ${resLabel}`);
+      console.log("");
+      console.log(`Visit \x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m to review consent settings`);
+      console.log(`Run \x1b[1magent-logs uninstall\x1b[0m to uninstall this tool`);
+    } else if (projects.withdrawn.includes(cwd)) {
+      console.log(`${cyanBold("Agent Logs")} ${dim("not shared for this project")}`);
+    }
     break;
   }
 
