@@ -49,33 +49,35 @@
           </div>
         </li>
         <li>
-          <strong>Log in with your Claude account email</strong>
-          <p>You'll receive a verification code by email.</p>
+          <strong>Launch Claude Code</strong>
+          <p>Navigate to your coursework directory and run <code>claude</code>. On first launch you'll be prompted to log in with your Claude account email — a verification code will be sent to you.</p>
           <div class="code-block">
-            <span class="command">agent-logs login</span><br>
+            <span class="command">cd ~/coursework/my-project</span><br>
+            <span class="command">claude</span><br>
             <span class="output">Claude account email: tanaka@chibatech.dev</span><br>
             <span class="output">Sending verification code to tanaka@chibatech.dev...</span><br>
             <span class="output">Enter the 6-digit code from your email: 123456</span><br>
-            <span class="success">Authenticated as: tanaka@chibatech.dev</span><br>
-            <span class="success">Claude Code hooks registered.</span>
+            <span class="success">Authenticated as: tanaka@chibatech.dev</span>
           </div>
         </li>
         <li>
-          <strong>Share your coursework projects</strong>
-          <p>Navigate to each project directory and run:</p>
+          <strong>Choose whether to share this folder</strong>
+          <p>A consent dialog will appear before Claude starts. Use the arrow keys to select and press Enter. You'll only be asked once per folder.</p>
           <div class="code-block">
-            <span class="command">cd ~/coursework/my-project</span><br>
-            <span class="command">agent-logs consent</span><br>
-            <span class="success">Sharing enabled for: /home/tanaka/coursework/my-project</span>
+            <span class="output">Chiba Tech · Agent Logs</span><br>
+            <span class="output"></span><br>
+            <span class="output">Share session logs for this workspace?</span><br>
+            <span class="output">/home/tanaka/coursework/my-project</span><br>
+            <span class="output"></span><br>
+            <span class="output">❯ 1. Yes, share this folder</span><br>
+            <span class="output">&nbsp; 2. No, don't share</span><br>
+            <span class="output"></span><br>
+            <span class="output">Enter to confirm · Esc to cancel</span>
           </div>
         </li>
         <li>
           <strong>Use Claude Code as normal</strong>
-          <p>Logs sync automatically after each turn. You'll see a status message at the start of each session:</p>
-          <div class="code-block">
-            <span class="output">Chiba Tech — session logs are being shared</span><br>
-            <span class="output">&nbsp; [x] Course purposes (grading and feedback)</span>
-          </div>
+          <p>Session logs sync automatically in the background. You can change your choice anytime with <code>agent-logs withdraw</code> or <code>agent-logs consent</code>.</p>
         </li>
       </ol>
     </div>
