@@ -73,5 +73,6 @@ esac
 sed -i "/$MARKER/d" "$RC" 2>/dev/null || true
 printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
 ok "Wrapper installed at ${RC}"
-printf '\033[1;32m✓\033[0m Installation complete. Run:\n'
-printf '\n  \033[1msource %s && claude\033[0m\n\n' "$RC"
+printf '\033[1;32m✓\033[0m Installation complete. Run:\n\n'
+printf '  \033[1msource %s\033[0m\n' "$RC"
+printf '  \033[38;2;227;137;62mclaude\033[0m\n\n'

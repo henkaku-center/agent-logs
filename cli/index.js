@@ -399,7 +399,7 @@ Commands:
 
     console.log("\nUninstall complete. Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
     if (removedFrom.length > 0) {
-      console.log(`\nRun \x1b[1msource ${removedFrom[0]}\x1b[0m to finish.`);
+      console.log(`\n\x1b[1;32m✓\x1b[0m To complete uninstallation run:\n\n  \x1b[1msource ${removedFrom[0]}\x1b[0m\n`);
     }
     break;
   }
