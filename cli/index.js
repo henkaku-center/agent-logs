@@ -9,15 +9,9 @@ import { sync } from "./sync.js";
 const command = process.argv[2];
 
 /**
- * Prompt user for consent decision via /dev/tty.
- * Hooks receive piped stdin from Claude, so we read the terminal directly.
- * Returns true for yes (share), false for no (decline).
- * Default is yes (press Enter to accept), matching the meeting agreement.
- */
-/**
- * Interactive select prompt via /dev/tty in raw mode.
- * Up/down arrows or 1/2 to move, Enter to confirm, Esc/Ctrl-C to cancel.
- * Mimics Claude Code's trust dialog.
+ * Interactive consent prompt via /dev/tty in raw mode.
+ * Up/down arrows or 1/2 to move, Enter to confirm, Esc to skip.
+ * Returns true (share), false (decline), or null (skipped).
  */
 async function promptConsent() {
   const dim = (s) => `\x1b[2m${s}\x1b[0m`;
