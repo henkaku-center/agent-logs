@@ -346,14 +346,20 @@ Commands:
       console.log(`${launcher} already removed.`);
     }
 
-    // Remove claude wrapper if it's ours
+    // Remove claude wrapper if it's ours, restore symlink to real binary
     const wrapper = join(homedir(), ".local", "bin", "claude");
     try {
-      const { readFileSync: readF } = await import("fs");
+      const { readFileSync: readF, readdirSync, symlinkSync } = await import("fs");
       const content = readF(wrapper, "utf8");
       if (content.includes("agent-logs")) {
         rmSync(wrapper);
-        console.log(`Removed claude wrapper: ${wrapper}`);
+        // Restore symlink to latest Claude binary
+        const versionsDir = join(homedir(), ".local", "share", "claude", "versions");
+        const versions = readdirSync(versionsDir).sort().reverse();
+        if (versions.length > 0) {
+          symlinkSync(join(versionsDir, versions[0]), wrapper);
+          console.log(`Restored claude → ${versions[0]}`);
+        }
       }
     } catch {
       // No wrapper or not ours — skip

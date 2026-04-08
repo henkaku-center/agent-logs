@@ -64,6 +64,7 @@ fi
 CLAUDE_VERSIONS="${HOME}/.local/share/claude/versions"
 
 if [ -d "$CLAUDE_VERSIONS" ]; then
+  rm -f "${INSTALL_DIR}/claude"
   cat > "${INSTALL_DIR}/claude" <<'WRAPPER'
 #!/usr/bin/env bash
 agent-logs consent-dialog
