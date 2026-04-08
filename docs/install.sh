@@ -75,5 +75,4 @@ WRAPPER
 else
   info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
 fi
-
 ok "Installation complete. Run 'claude' to get started."
