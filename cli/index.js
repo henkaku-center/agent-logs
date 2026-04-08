@@ -174,7 +174,7 @@ switch (command) {
         registerHooks();
       } catch (err) {
         console.error(`Login failed: ${err.message}`);
-        break;
+        process.exit(1);
       }
     }
 
