@@ -52,9 +52,7 @@ export async function login() {
   log(`${cyan("─".repeat(cols))}\n${cyan(" Agent Logging Authentication")}\n`);
 
   let email = readClaudeEmail();
-  if (email) {
-    log(` Using Claude account: ${email}`);
-  } else {
+  if (!email) {
     email = await prompt(" Email address: ");
     lines += 1;
     if (!email || !email.includes("@")) {
