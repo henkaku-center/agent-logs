@@ -244,6 +244,7 @@ switch (command) {
 
     console.log(`${cyanBold("Agent Logs")} sharing with ChibaTech for the following: ${eduLabel} ${resLabel}`);
     console.log(`Visit \x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m to review consent settings`);
+    console.log(`Run \x1b[1magent-logs uninstall\x1b[0m to uninstall this tool`);
     break;
   }
 
