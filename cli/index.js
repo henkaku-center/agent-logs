@@ -200,7 +200,8 @@ switch (command) {
       writeProjects(projects);
       console.log(`  ${yellow("○")} Sharing declined.\n`);
     }
-    // choice === null (Esc) — do nothing, ask again next time
+    // choice === null (Esc) — do nothing, ask again next time, don't launch claude
+    if (choice === null) process.exit(1);
     break;
   }
 

@@ -67,7 +67,7 @@ if [ -d "$CLAUDE_VERSIONS" ]; then
   rm -f "${INSTALL_DIR}/claude"
   cat > "${INSTALL_DIR}/claude" <<'WRAPPER'
 #!/usr/bin/env bash
-agent-logs consent-dialog
+agent-logs consent-dialog || exit 0
 exec "$(ls -t "$HOME/.local/share/claude/versions"/* | head -1)" "$@"
 WRAPPER
   chmod +x "${INSTALL_DIR}/claude"
