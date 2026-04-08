@@ -134,7 +134,7 @@ switch (command) {
     }
     writeProjects(projects);
     console.log(`Sharing disabled for: ${cwd}`);
-    console.log("Previously synced data remains on the server. Submit a delete request via the portal to remove it.");
+    console.log("Review your consent and project-level session logs at https://agent-logs.chibatech.dev");
     break;
   }
 
@@ -360,7 +360,7 @@ Commands:
       // No wrapper or not ours — skip
     }
 
-    console.log("\nUninstall complete. Previously synced data remains on the server.");
+    console.log("\nUninstall complete. Review your consent and project-level session logs at https://agent-logs.chibatech.dev");
     break;
   }
 
