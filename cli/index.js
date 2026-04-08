@@ -134,7 +134,7 @@ switch (command) {
     }
     writeProjects(projects);
     console.log(`Sharing disabled for: ${cwd}`);
-    console.log("Review your consent and project-level session logs at https://agent-logs.chibatech.dev");
+    console.log("Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
     break;
   }
 
@@ -371,7 +371,7 @@ Commands:
       // No wrapper or not ours — skip
     }
 
-    console.log("\nUninstall complete. Review your consent and project-level session logs at https://agent-logs.chibatech.dev");
+    console.log("\nUninstall complete. Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
     break;
   }
 
