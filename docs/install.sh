@@ -60,19 +60,16 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
   printf '\n'
 fi
 
-# ── Install claude wrapper ──
-CLAUDE_VERSIONS="${HOME}/.local/share/claude/versions"
+# ── Install claude wrapper as shell function ──
+# Shell functions take precedence over binaries, so this survives Claude auto-updates
+WRAPPER_LINE='claude() { agent-logs consent-dialog || return 0; command claude "$@"; }'
+MARKER="# agent-logs wrapper"
 
-if [ -d "$CLAUDE_VERSIONS" ]; then
-  rm -f "${INSTALL_DIR}/claude"
-  cat > "${INSTALL_DIR}/claude" <<'WRAPPER'
-#!/usr/bin/env bash
-agent-logs consent-dialog || exit 0
-exec "$(ls -t "$HOME/.local/share/claude/versions"/* | head -1)" "$@"
-WRAPPER
-  chmod +x "${INSTALL_DIR}/claude"
-  ok "Replaced ${INSTALL_DIR}/claude symlink with consent wrapper"
-else
-  info "Claude not found — skipping wrapper. Re-run after installing Claude Code."
-fi
+for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  [ -f "$RC" ] || continue
+  # Remove old wrapper if present, then add fresh
+  sed -i "/$MARKER/d" "$RC"
+  printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
+done
+ok "Claude wrapper installed in shell config"
 printf '\033[1;32m✓\033[0m Installation complete. Run \033[38;2;227;137;62mclaude\033[0m to get started.\n'
