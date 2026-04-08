@@ -37,7 +37,7 @@
 
       <div class="info-box">
         <strong>Prerequisites</strong>
-        <p style="margin-bottom:0">You need a Claude Enterprise seat issued by Chiba Tech. Log in to agent-logs with the <strong>same email address</strong> as your Claude Enterprise account. If you don't have a seat yet, contact <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
+        <p style="margin-bottom:0">You need a Claude seat issued by Chiba Tech. Log in to agent-logs with the <strong>same email address</strong> as your Claude account. If you don't have a seat yet, contact <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
       </div>
 
       <ol class="steps">
@@ -49,11 +49,13 @@
           </div>
         </li>
         <li>
-          <strong>Log in with your Claude Enterprise email</strong>
-          <p>Sign in with the same Google account used for your Claude Enterprise seat.</p>
+          <strong>Log in with your Claude account email</strong>
+          <p>You'll receive a verification code by email.</p>
           <div class="code-block">
             <span class="command">agent-logs login</span><br>
-            <span class="output">Opening browser for Google sign-in...</span><br>
+            <span class="output">Claude account email: tanaka@chibatech.dev</span><br>
+            <span class="output">Sending verification code to tanaka@chibatech.dev...</span><br>
+            <span class="output">Enter the 6-digit code from your email: 123456</span><br>
             <span class="success">Authenticated as: tanaka@chibatech.dev</span><br>
             <span class="success">Claude Code hooks registered.</span>
           </div>
@@ -105,6 +107,10 @@
           <tr>
             <td><code>agent-logs doctor</code></td>
             <td>Check that everything is configured correctly</td>
+          </tr>
+          <tr>
+            <td><code>agent-logs logout</code></td>
+            <td>Clear stored credentials</td>
           </tr>
           <tr>
             <td><code>agent-logs uninstall</code></td>
@@ -175,8 +181,12 @@
             <td>Check <code>~/.config/agent-logs/last-sync.json</code> for details</td>
           </tr>
           <tr>
-            <td>Domain @... is not authorized</td>
-            <td>You must log in with the same email as your Claude Enterprise account. Run <code>agent-logs login</code> with the correct account. If you don't have a Claude Enterprise seat, contact <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</td>
+            <td>... is not authorized</td>
+            <td>Log in with the same email as your Claude account. If you don't have a seat, contact <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</td>
+          </tr>
+          <tr>
+            <td>No verification code received</td>
+            <td>Check your spam folder. The email comes from grisha@henkaku.center. If still missing, try <code>agent-logs login</code> again.</td>
           </tr>
         </tbody>
       </table>
