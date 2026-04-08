@@ -1,7 +1,7 @@
 // Agent Logs — Student Portal
 // Single-page app: auth, dashboard, consent, survey, sessions
 
-const API = "https://agent-logging-185303388981.asia-northeast1.run.app";
+const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
 
 // ── Auth ──
 
