@@ -60,6 +60,33 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
   printf '\n'
 fi
 
+# ── Install claude wrapper ──
+# Find the real claude binary, skipping our own install dir to avoid self-reference
+REAL_CLAUDE=""
+IFS=: read -ra PATH_DIRS <<< "$PATH"
+for dir in "${PATH_DIRS[@]}"; do
+  [ "$dir" = "$INSTALL_DIR" ] && continue
+  if [ -x "${dir}/claude" ]; then
+    REAL_CLAUDE="${dir}/claude"
+    break
+  fi
+done
+
+if [ -n "$REAL_CLAUDE" ]; then
+  # Bake in the absolute path to the real binary so the wrapper never calls itself
+  cat > "${INSTALL_DIR}/claude" <<WRAPPER
+#!/usr/bin/env bash
+# agent-logs wrapper — shows consent dialog before Claude starts
+agent-logs consent-dialog
+exec "${REAL_CLAUDE}" "\$@"
+WRAPPER
+  chmod +x "${INSTALL_DIR}/claude"
+  ok "Claude wrapper installed (${REAL_CLAUDE} → ${INSTALL_DIR}/claude)"
+else
+  info "Claude binary not found — skipping wrapper install."
+  info "After installing Claude Code, re-run this installer to add the consent dialog."
+fi
+
 # ── Next step ──
 printf '\n'
 info "Run 'agent-logs login' to authenticate and register Claude Code hooks."

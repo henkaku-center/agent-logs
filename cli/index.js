@@ -48,7 +48,7 @@ async function promptConsent() {
 }
 
 // Commands that don't require authentication
-const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-check", "sync", undefined]);
+const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-dialog", "sync", undefined]);
 
 if (!PUBLIC_COMMANDS.has(command)) {
   const token = readToken();
@@ -117,121 +117,56 @@ switch (command) {
     break;
   }
 
-  case "consent-check": {
+  case "consent-dialog": {
+    // Runs BEFORE claude launches (called by shell wrapper, not a hook).
+    // If folder state is already known, exits immediately. Otherwise
+    // shows an interactive Y/n prompt like Claude's own trust dialog.
     const projects = readProjects();
     const cwd = process.cwd();
-
-    let hookCwd = cwd;
-    try {
-      let input = "";
-      for await (const chunk of process.stdin) {
-        input += chunk;
-      }
-      if (input) {
-        const hookData = JSON.parse(input);
-        if (hookData.cwd) hookCwd = hookData.cwd;
-      }
-    } catch {
-      // Use process.cwd() as fallback
-    }
 
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
     const bold = (s) => `\x1b[1m${s}\x1b[0m`;
     const green = (s) => `\x1b[32m${s}\x1b[0m`;
     const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
     const blue = (s) => `\x1b[34m${s}\x1b[0m`;
-
+    const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
     const line = dim("─".repeat(52));
 
-    // stderr = visible to user in terminal
-    // stdout = injected into Claude's context
-    const banner = (msg) => console.error(msg);
-
+    // Not logged in — nothing to ask
     const tokenData = readToken();
-    if (!tokenData?.token) {
-      banner([
-        line,
-        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
-        `  ${yellow("⚠")} Not logged in`,
-        `  Run ${blue("agent-logs login")} to set up session logging.`,
-        line,
-      ].join("\n"));
-      break;
-    }
+    if (!tokenData?.token) break;
 
-    if (projects.shared.includes(hookCwd)) {
-      const lines = [
-        line,
-        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
-        `  ${green("●")} Session logs are being shared`,
-        `  ${dim("├")} ${green("✓")} Course purposes (grading and feedback)`,
-      ];
-      if (projects.tier_b) {
-        lines.push(`  ${dim("├")} ${green("✓")} Anonymised data for research`);
-      }
-      lines.push(
-        `  ${dim("└")} ${dim(projects.student_id)}`,
-        ``,
-        `  ${dim(`Run ${blue("agent-logs withdraw")} to stop sharing.`)}`,
-        line,
-      );
-      banner(lines.join("\n"));
-      // Context for Claude
-      console.log(`agent-logs: session logs are being shared for ${hookCwd} by ${projects.student_id}`);
-    } else if (projects.withdrawn.includes(hookCwd)) {
-      banner([
-        line,
-        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
-        `  ${yellow("○")} Session logs are ${bold("not")} being shared`,
-        `  ${dim("└")} ${dim(projects.student_id)}`,
-        ``,
-        `  ${dim(`Run ${blue("agent-logs consent")} to start sharing.`)}`,
-        line,
-      ].join("\n"));
+    // Already decided — skip
+    if (projects.shared.includes(cwd) || projects.withdrawn.includes(cwd)) break;
+
+    // Unknown folder — show consent dialog
+    console.log([
+      line,
+      `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
+      ``,
+      `  ${bold("Share session logs for this workspace?")}`,
+      `  ${cyan(cwd)}`,
+      ``,
+      `  Session logs from this folder will be shared with`,
+      `  your course instructors for grading and feedback.`,
+      ``,
+      `  You can change this anytime with ${blue("agent-logs withdraw")}`,
+      `  ${dim("└")} ${dim(projects.student_id)}`,
+      line,
+    ].join("\n"));
+
+    const choice = await promptConsent();
+
+    if (choice) {
+      projects.shared.push(cwd);
+      projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
+      writeProjects(projects);
+      console.log(`  ${green("●")} Sharing enabled.\n`);
     } else {
-      // Unknown folder — force a consent decision (mimics Claude's trust dialog)
-      const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
-
-      banner([
-        line,
-        `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
-        ``,
-        `  ${bold("Share session logs for this workspace?")}`,
-        `  ${cyan(hookCwd)}`,
-        ``,
-        `  Session logs from this folder will be shared with`,
-        `  your course instructors for grading and feedback.`,
-        ``,
-        `  You can change this anytime with ${blue("agent-logs withdraw")}`,
-        `  ${dim("└")} ${dim(projects.student_id)}`,
-        line,
-      ].join("\n"));
-
-      // Interactive prompt via /dev/tty (stdin is piped from Claude)
-      const choice = await promptConsent();
-
-      if (choice) {
-        // User chose yes — add to shared
-        projects.shared = projects.shared.filter((p) => p !== hookCwd);
-        projects.shared.push(hookCwd);
-        projects.withdrawn = projects.withdrawn.filter((p) => p !== hookCwd);
-        writeProjects(projects);
-        banner([
-          `  ${green("●")} Sharing enabled for this session.`,
-          line,
-        ].join("\n"));
-        console.log(`agent-logs: session logs are being shared for ${hookCwd} by ${projects.student_id}`);
-      } else {
-        // User chose no — add to withdrawn
-        projects.withdrawn = projects.withdrawn.filter((p) => p !== hookCwd);
-        projects.withdrawn.push(hookCwd);
-        projects.shared = projects.shared.filter((p) => p !== hookCwd);
-        writeProjects(projects);
-        banner([
-          `  ${yellow("○")} Sharing declined. Logs will not be collected.`,
-          line,
-        ].join("\n"));
-      }
+      projects.withdrawn.push(cwd);
+      projects.shared = projects.shared.filter((p) => p !== cwd);
+      writeProjects(projects);
+      console.log(`  ${yellow("○")} Sharing declined.\n`);
     }
     break;
   }
@@ -370,6 +305,19 @@ Commands:
       console.log(`Removed ${launcher}`);
     } catch {
       console.log(`${launcher} already removed.`);
+    }
+
+    // Remove claude wrapper if it's ours
+    const wrapper = join(homedir(), ".local", "bin", "claude");
+    try {
+      const { readFileSync: readF } = await import("fs");
+      const content = readF(wrapper, "utf8");
+      if (content.includes("agent-logs")) {
+        rmSync(wrapper);
+        console.log(`Removed claude wrapper: ${wrapper}`);
+      }
+    } catch {
+      // No wrapper or not ours — skip
     }
 
     console.log("\nUninstall complete. Previously synced data remains on the server.");
