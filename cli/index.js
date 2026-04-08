@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { createReadStream } from "fs";
+import { createInterface } from "readline";
 import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
 import { login, getToken } from "./auth.js";
@@ -7,6 +9,43 @@ import { registerHooks, unregisterHooks, hooksRegistered } from "./hooks.js";
 import { sync } from "./sync.js";
 
 const command = process.argv[2];
+
+/**
+ * Prompt user for consent decision via /dev/tty.
+ * Hooks receive piped stdin from Claude, so we read the terminal directly.
+ * Returns true for yes (share), false for no (decline).
+ * Default is yes (press Enter to accept), matching the meeting agreement.
+ */
+async function promptConsent() {
+  const green = (s) => `\x1b[32m${s}\x1b[0m`;
+  const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+  const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+
+  let ttyIn;
+  try {
+    ttyIn = createReadStream("/dev/tty");
+  } catch {
+    // No TTY available (non-interactive environment) — default to no
+    return false;
+  }
+
+  const rl = createInterface({ input: ttyIn, output: process.stderr });
+
+  try {
+    return await new Promise((resolve) => {
+      rl.question(
+        `\n  ${green("❯")} ${bold("Yes, share this folder")}  /  No, don't share  ${dim("[Y/n]")} `,
+        (answer) => {
+          const a = answer.trim().toLowerCase();
+          resolve(a === "" || a === "y" || a === "yes");
+        }
+      );
+    });
+  } finally {
+    rl.close();
+    ttyIn.close();
+  }
+}
 
 // Commands that don't require authentication
 const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-check", "sync", undefined]);
@@ -150,15 +189,49 @@ switch (command) {
         line,
       ].join("\n"));
     } else {
+      // Unknown folder — force a consent decision (mimics Claude's trust dialog)
+      const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+
       banner([
         line,
         `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
-        `  ${yellow("○")} This project is not being shared`,
-        `  ${dim("└")} ${dim(projects.student_id)}`,
         ``,
-        `  ${dim(`Run ${blue("agent-logs consent")} to share this project.`)}`,
+        `  ${bold("Share session logs for this workspace?")}`,
+        `  ${cyan(hookCwd)}`,
+        ``,
+        `  Session logs from this folder will be shared with`,
+        `  your course instructors for grading and feedback.`,
+        ``,
+        `  You can change this anytime with ${blue("agent-logs withdraw")}`,
+        `  ${dim("└")} ${dim(projects.student_id)}`,
         line,
       ].join("\n"));
+
+      // Interactive prompt via /dev/tty (stdin is piped from Claude)
+      const choice = await promptConsent();
+
+      if (choice) {
+        // User chose yes — add to shared
+        projects.shared = projects.shared.filter((p) => p !== hookCwd);
+        projects.shared.push(hookCwd);
+        projects.withdrawn = projects.withdrawn.filter((p) => p !== hookCwd);
+        writeProjects(projects);
+        banner([
+          `  ${green("●")} Sharing enabled for this session.`,
+          line,
+        ].join("\n"));
+        console.log(`agent-logs: session logs are being shared for ${hookCwd} by ${projects.student_id}`);
+      } else {
+        // User chose no — add to withdrawn
+        projects.withdrawn = projects.withdrawn.filter((p) => p !== hookCwd);
+        projects.withdrawn.push(hookCwd);
+        projects.shared = projects.shared.filter((p) => p !== hookCwd);
+        writeProjects(projects);
+        banner([
+          `  ${yellow("○")} Sharing declined. Logs will not be collected.`,
+          line,
+        ].join("\n"));
+      }
     }
     break;
   }
