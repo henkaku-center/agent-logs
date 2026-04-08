@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 
-import { createReadStream } from "fs";
-import { createInterface } from "readline";
 import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
 import { login, getToken } from "./auth.js";
@@ -16,35 +14,75 @@ const command = process.argv[2];
  * Returns true for yes (share), false for no (decline).
  * Default is yes (press Enter to accept), matching the meeting agreement.
  */
+/**
+ * Interactive select prompt via /dev/tty in raw mode.
+ * Up/down arrows or 1/2 to move, Enter to confirm, Esc/Ctrl-C to cancel.
+ * Mimics Claude Code's trust dialog.
+ */
 async function promptConsent() {
-  const green = (s) => `\x1b[32m${s}\x1b[0m`;
   const dim = (s) => `\x1b[2m${s}\x1b[0m`;
   const bold = (s) => `\x1b[1m${s}\x1b[0m`;
+  const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 
-  let ttyIn;
+  const fs = await import("fs");
+  const tty = await import("tty");
+
+  let fd;
   try {
-    ttyIn = createReadStream("/dev/tty");
+    fd = fs.openSync("/dev/tty", "r+");
   } catch {
-    // No TTY available (non-interactive environment) — default to no
     return false;
   }
 
-  const rl = createInterface({ input: ttyIn, output: process.stderr });
+  const ttyIn = new tty.ReadStream(fd);
+  const ttyOut = new tty.WriteStream(fd);
 
-  try {
-    return await new Promise((resolve) => {
-      rl.question(
-        `\n  ${green("❯")} ${bold("Yes, share this folder")}  /  No, don't share  ${dim("[Y/n]")} `,
-        (answer) => {
-          const a = answer.trim().toLowerCase();
-          resolve(a === "" || a === "y" || a === "yes");
-        }
-      );
+  let selected = 0; // 0 = yes, 1 = no
+
+  const render = () => {
+    const yes = selected === 0
+      ? `  ${cyan("❯")} ${bold("1.")} ${bold("Yes, share this folder")}`
+      : `    ${dim("1.")} ${dim("Yes, share this folder")}`;
+    const no = selected === 1
+      ? `  ${cyan("❯")} ${bold("2.")} ${bold("No, don't share")}`
+      : `    ${dim("2.")} ${dim("No, don't share")}`;
+    // Move cursor up 4 lines, clear them, redraw
+    ttyOut.write(`\x1b[4A\x1b[J${yes}\n${no}\n\n  ${dim("Enter to confirm · Esc to cancel")}\n`);
+  };
+
+  // Initial draw
+  ttyOut.write(`\n  ${cyan("❯")} ${bold("1.")} ${bold("Yes, share this folder")}\n    ${dim("2.")} ${dim("No, don't share")}\n\n  ${dim("Enter to confirm · Esc to cancel")}\n`);
+
+  ttyIn.setRawMode(true);
+
+  const result = await new Promise((resolve) => {
+    ttyIn.on("data", (buf) => {
+      const str = buf.toString();
+
+      // Ctrl-C or Esc — cancel (skip, ask again next time)
+      if (buf[0] === 3 || (buf[0] === 27 && buf.length === 1)) {
+        resolve(null);
+        return;
+      }
+
+      // Arrow up / Arrow down
+      if (str === "\x1b[A" || str === "1") { selected = 0; render(); return; }
+      if (str === "\x1b[B" || str === "2") { selected = 1; render(); return; }
+
+      // Enter — confirm current selection
+      if (str === "\r" || str === "\n") {
+        resolve(selected === 0);
+        return;
+      }
     });
-  } finally {
-    rl.close();
-    ttyIn.close();
-  }
+  });
+
+  ttyIn.setRawMode(false);
+  ttyIn.destroy();
+  ttyOut.destroy();
+  fs.closeSync(fd);
+
+  return result;
 }
 
 // Commands that don't require authentication
@@ -142,7 +180,7 @@ switch (command) {
     // Unknown folder — show consent dialog
     console.log([
       line,
-      `  ${bold("Chiba Tech SDS")} ${dim("· agent-logs")}`,
+      `  ${bold("Chiba Tech")} ${dim("· Agent Logs")}`,
       ``,
       `  ${bold("Share session logs for this workspace?")}`,
       `  ${cyan(cwd)}`,
@@ -157,17 +195,18 @@ switch (command) {
 
     const choice = await promptConsent();
 
-    if (choice) {
+    if (choice === true) {
       projects.shared.push(cwd);
       projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
       writeProjects(projects);
       console.log(`  ${green("●")} Sharing enabled.\n`);
-    } else {
+    } else if (choice === false) {
       projects.withdrawn.push(cwd);
       projects.shared = projects.shared.filter((p) => p !== cwd);
       writeProjects(projects);
       console.log(`  ${yellow("○")} Sharing declined.\n`);
     }
+    // choice === null (Esc) — do nothing, ask again next time
     break;
   }
 

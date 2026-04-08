@@ -61,27 +61,33 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
 fi
 
 # ── Install claude wrapper ──
-# Find the real claude binary, skipping our own install dir to avoid self-reference
-REAL_CLAUDE=""
-IFS=: read -ra PATH_DIRS <<< "$PATH"
-for dir in "${PATH_DIRS[@]}"; do
-  [ "$dir" = "$INSTALL_DIR" ] && continue
-  if [ -x "${dir}/claude" ]; then
-    REAL_CLAUDE="${dir}/claude"
-    break
-  fi
-done
+# Resolve the real claude binary (follows symlinks to actual executable)
+CLAUDE_PATH=$(command -v claude 2>/dev/null || true)
 
-if [ -n "$REAL_CLAUDE" ]; then
-  # Bake in the absolute path to the real binary so the wrapper never calls itself
-  cat > "${INSTALL_DIR}/claude" <<WRAPPER
+if [ -n "$CLAUDE_PATH" ]; then
+  REAL_CLAUDE=$(readlink -f "$CLAUDE_PATH")
+
+  VERSIONS_DIR=$(dirname "$REAL_CLAUDE")
+
+  # Only wrap if it's a real executable and not already our wrapper
+  if [ -x "$REAL_CLAUDE" ] && ! grep -q "agent-logs" "$REAL_CLAUDE" 2>/dev/null; then
+    cat > "${INSTALL_DIR}/claude" <<WRAPPER
 #!/usr/bin/env bash
 # agent-logs wrapper — shows consent dialog before Claude starts
+# Resolve latest Claude binary at runtime (survives auto-updates)
+CLAUDE_BIN="\$(ls -t "${VERSIONS_DIR}"/* 2>/dev/null | head -1)"
+if [ -z "\$CLAUDE_BIN" ] || [ ! -x "\$CLAUDE_BIN" ]; then
+  echo "Error: Claude binary not found in ${VERSIONS_DIR}" >&2
+  exit 1
+fi
 agent-logs consent-dialog
-exec "${REAL_CLAUDE}" "\$@"
+exec "\$CLAUDE_BIN" "\$@"
 WRAPPER
-  chmod +x "${INSTALL_DIR}/claude"
-  ok "Claude wrapper installed (${REAL_CLAUDE} → ${INSTALL_DIR}/claude)"
+    chmod +x "${INSTALL_DIR}/claude"
+    ok "Claude wrapper installed (${REAL_CLAUDE})"
+  else
+    info "Claude wrapper already installed — skipping."
+  fi
 else
   info "Claude binary not found — skipping wrapper install."
   info "After installing Claude Code, re-run this installer to add the consent dialog."
