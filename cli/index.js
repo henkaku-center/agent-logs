@@ -395,8 +395,7 @@ Commands:
       }
     }
 
-    console.log("\nUninstall complete. Restart your shell or run \x1b[1mexec $SHELL\x1b[0m to finish.");
-    console.log("Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
+    console.log("\nUninstall complete. Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
     break;
   }
 
