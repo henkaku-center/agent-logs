@@ -44,15 +44,13 @@ export function getToken() {
  * 4. Server verifies, returns JWT
  */
 export async function login() {
-  let email = readClaudeEmail();
-  if (email) {
-    console.log(`Using Claude account: ${email}`);
-  } else {
-    email = await prompt("Claude account email: ");
+  const email = readClaudeEmail();
+  if (!email) {
+    throw new Error(
+      `Claude account not found. Log in to Claude Code first:\n\x1b[1mclaude auth login\x1b[0m`
+    );
   }
-  if (!email || !email.includes("@")) {
-    throw new Error("Invalid email address");
-  }
+  console.log(`Using Claude account: ${email}`);
 
   // Request verification code
   console.log(`Sending verification code to ${email}...`);
