@@ -243,6 +243,7 @@ switch (command) {
     const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
 
     console.log(`${cyanBold("Agent Logs")} sharing with ChibaTech for the following: ${eduLabel} ${resLabel}`);
+    console.log(`Visit \x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m to review consent settings`);
     break;
   }
 
