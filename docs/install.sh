@@ -62,7 +62,7 @@ fi
 
 # ── Install claude wrapper as shell function ──
 # Shell functions take precedence over binaries, so this survives Claude auto-updates
-WRAPPER_LINE='claude() { agent-logs consent-dialog || return 0; command claude "$@"; }'
+WRAPPER_LINE='claude() { command -v agent-logs &>/dev/null && { agent-logs consent-dialog || return 0; }; command claude "$@"; }'
 MARKER="# agent-logs wrapper"
 
 case "$(basename "$SHELL")" in
