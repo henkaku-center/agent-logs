@@ -353,7 +353,7 @@ Commands:
         const versions = readdirSync(versionsDir).sort().reverse();
         if (versions.length > 0) {
           symlinkSync(join(versionsDir, versions[0]), wrapper);
-          console.log(`Restored claude → ${versions[0]}`);
+          console.log(`Restored ${wrapper} → ${join(versionsDir, versions[0])}`);
         }
       }
     } catch {
