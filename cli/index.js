@@ -380,22 +380,19 @@ Commands:
       console.log(`${launcher} already removed.`);
     }
 
-    // Remove claude wrapper if it's ours, restore symlink to real binary
-    const wrapper = join(homedir(), ".local", "bin", "claude");
-    try {
-      const { readFileSync: readF, readdirSync, symlinkSync } = await import("fs");
-      const content = readF(wrapper, "utf8");
-      if (content.includes("agent-logs")) {
-        rmSync(wrapper);
-        const versionsDir = join(homedir(), ".local", "share", "claude", "versions");
-        const versions = readdirSync(versionsDir).sort().reverse();
-        if (versions.length > 0) {
-          symlinkSync(join(versionsDir, versions[0]), wrapper);
-          console.log(`Restored ${wrapper} → ${join(versionsDir, versions[0])}`);
+    // Remove claude wrapper function from shell configs
+    const { readFileSync: readF, writeFileSync: writeF } = await import("fs");
+    for (const rc of [join(homedir(), ".bashrc"), join(homedir(), ".zshrc")]) {
+      try {
+        const content = readF(rc, "utf8");
+        const filtered = content.split("\n").filter((l) => !l.includes("# agent-logs wrapper")).join("\n");
+        if (filtered !== content) {
+          writeF(rc, filtered);
+          console.log(`Removed claude wrapper from ${rc}`);
         }
+      } catch {
+        // File doesn't exist — skip
       }
-    } catch {
-      // No wrapper or not ours — skip
     }
 
     console.log("\nUninstall complete. Review your consent and project-level session logs at\n\x1b[4;34mhttps://agent-logs.chibatech.dev\x1b[0m");
