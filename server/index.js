@@ -468,6 +468,7 @@ app.get("/portal/sessions", async (req, res) => {
   }
 
   try {
+    // Session summaries
     const [rows] = await bigquery.query({
       query: `SELECT project_path, session_id,
                      MIN(timestamp) AS first_timestamp,
@@ -478,15 +479,47 @@ app.get("/portal/sessions", async (req, res) => {
               FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
               WHERE student_id = @student_id
               GROUP BY project_path, session_id
-              ORDER BY MIN(timestamp) DESC`,
+              ORDER BY MAX(timestamp) DESC`,
       params: { student_id: email },
     });
+
+    // Get first user message per session as title
+    const sessionIds = rows.map((r) => r.session_id);
+    let titles = {};
+    if (sessionIds.length > 0) {
+      const [titleRows] = await bigquery.query({
+        query: `SELECT session_id, data
+                FROM (
+                  SELECT session_id, data, timestamp,
+                         ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp ASC) AS rn
+                  FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
+                  WHERE student_id = @student_id
+                    AND record_type = 'user'
+                    AND session_id IN UNNEST(@session_ids)
+                )
+                WHERE rn = 1`,
+        params: { student_id: email, session_ids: sessionIds },
+        types: { session_ids: ["STRING"] },
+      });
+      for (const r of titleRows) {
+        try {
+          const d = JSON.parse(r.data);
+          const content = d.message?.content;
+          let text = typeof content === "string" ? content
+            : Array.isArray(content) ? (content.find((c) => c.type === "text")?.text || "") : "";
+          // Skip system messages as titles
+          if (text.startsWith("<system>") || text.startsWith("# ")) text = "";
+          if (text) titles[r.session_id] = text.slice(0, 100);
+        } catch {}
+      }
+    }
 
     const projects = {};
     for (const row of rows) {
       if (!projects[row.project_path]) projects[row.project_path] = [];
       projects[row.project_path].push({
         session_id: row.session_id,
+        title: titles[row.session_id] || null,
         first_timestamp: row.first_timestamp?.value,
         last_timestamp: row.last_timestamp?.value,
         record_count: row.record_count,

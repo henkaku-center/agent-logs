@@ -3,6 +3,21 @@
 
 const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
 
+function timeAgo(timestamp) {
+  const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // ── Auth ──
 
 function getToken() {
@@ -229,12 +244,19 @@ async function loadSessions() {
     container.innerHTML = data.projects.map((project) => `
       <div class="session-project">
         <h3>${project.project_path.split("/").pop()}</h3>
-        ${project.sessions.map((s) => `
-          <div class="session-row">
-            <span class="session-date">${new Date(s.first_timestamp).toLocaleDateString()}</span>
-            <span class="session-stats">${s.user_count} prompts · ${s.assistant_count} responses</span>
-          </div>
-        `).join("")}
+        ${project.sessions.map((s) => {
+          const title = s.title || "Untitled session";
+          const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
+          const ago = timeAgo(s.last_timestamp);
+          return `
+            <div class="session-row">
+              <div>
+                <div class="session-title">${escapeHtml(truncated)}</div>
+                <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses</div>
+              </div>
+            </div>
+          `;
+        }).join("")}
       </div>
     `).join("");
   } catch (err) {

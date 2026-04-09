@@ -250,8 +250,18 @@
   font-size: 14px;
 }
 
-.session-row .session-date { font-weight: 700; }
-.session-row .session-stats { color: var(--dark-grey); }
+.session-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-meta {
+  color: var(--dark-grey);
+  font-size: 13px;
+}
 
 /* Survey progress */
 .survey-nav {
