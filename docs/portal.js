@@ -241,24 +241,33 @@ async function loadSessions() {
       container.innerHTML = "<p>No sessions synced yet. Use Claude Code in a shared project to generate session logs.</p>";
       return;
     }
-    container.innerHTML = data.projects.map((project) => `
-      <div class="session-project">
-        <h3>${project.project_path.split("/").pop()}</h3>
-        ${project.sessions.map((s) => {
-          const title = s.title || "Untitled session";
-          const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
-          const ago = timeAgo(s.last_timestamp);
-          return `
-            <div class="session-row">
-              <div>
-                <div class="session-title">${escapeHtml(truncated)}</div>
-                <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses</div>
-              </div>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    `).join("");
+    container.innerHTML = data.projects.map((project) => {
+      const name = project.project_path.split("/").pop();
+      const count = project.sessions.length;
+      return `
+        <details class="session-project">
+          <summary class="session-project-header">
+            <span class="session-project-name">${escapeHtml(name)}</span>
+            <span class="session-project-count">${count} session${count === 1 ? "" : "s"}</span>
+          </summary>
+          <div class="session-project-body">
+            ${project.sessions.map((s) => {
+              const title = s.title || "Untitled session";
+              const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
+              const ago = timeAgo(s.last_timestamp);
+              return `
+                <div class="session-row">
+                  <div>
+                    <div class="session-title">${escapeHtml(truncated)}</div>
+                    <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses</div>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </details>
+      `;
+    }).join("");
   } catch (err) {
     container.innerHTML = `<p class="form-error">${err.message}</p>`;
   }

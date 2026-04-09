@@ -230,15 +230,52 @@
 
 /* Session list */
 .session-project {
-  margin-bottom: 32px;
+  margin-bottom: 8px;
+  border: 1px solid #E0E0E0;
 }
 
-.session-project h3 {
-  font-size: 18px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
+.session-project-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
   background: #F8F8F8;
-  padding: 12px 16px;
-  margin-bottom: 0;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.session-project-header::-webkit-details-marker { display: none; }
+
+.session-project-header::before {
+  content: "▶";
+  font-size: 10px;
+  margin-right: 10px;
+  transition: transform 0.15s;
+  color: var(--dark-grey);
+}
+
+details[open] > .session-project-header::before {
+  transform: rotate(90deg);
+}
+
+.session-project-name {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  flex: 1;
+}
+
+.session-project-count {
+  font-size: 13px;
+  color: var(--dark-grey);
+  font-weight: 400;
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
+.session-project-body {
+  border-top: 1px solid #E0E0E0;
 }
 
 .session-row {
