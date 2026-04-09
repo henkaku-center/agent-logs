@@ -76,6 +76,10 @@ function setupLogin() {
   const sendBtn = document.getElementById("login-send-btn");
   const verifyBtn = document.getElementById("login-verify-btn");
 
+  document.getElementById("login-email").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); sendBtn.click(); }
+  });
+
   sendBtn.addEventListener("click", async () => {
     const email = document.getElementById("login-email").value.trim();
     const error = document.getElementById("login-error");
@@ -103,12 +107,22 @@ function setupLogin() {
         `Verification code sent to ${email}`;
       // Store email for verify step
       verifyBtn.dataset.email = email;
+      document.getElementById("login-code").focus();
     } catch (err) {
       error.textContent = err.message;
     } finally {
       sendBtn.disabled = false;
       sendBtn.textContent = "Send verification code";
     }
+  });
+
+  // Auto-submit when 6 digits entered, Enter key also submits
+  const codeInput = document.getElementById("login-code");
+  codeInput.addEventListener("input", () => {
+    if (codeInput.value.trim().length === 6) verifyBtn.click();
+  });
+  codeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); verifyBtn.click(); }
   });
 
   verifyBtn.addEventListener("click", async () => {
