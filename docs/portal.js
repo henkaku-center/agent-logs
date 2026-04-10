@@ -234,9 +234,11 @@ async function loadDashboard() {
 
 let sessionsOffset = 0;
 let allSessionProjects = {};
+let sessionsLoaded = false;
 
 async function loadSessions(append = false) {
   const container = document.getElementById("sessions-container");
+  if (!append && sessionsLoaded) return;
   if (!append) {
     container.innerHTML = '<p class="loading">Loading sessions...</p>';
     sessionsOffset = 0;
@@ -260,6 +262,7 @@ async function loadSessions(append = false) {
     }
 
     sessionsOffset += data.limit;
+    sessionsLoaded = true;
 
     renderSessions(container, data.has_more);
   } catch (err) {

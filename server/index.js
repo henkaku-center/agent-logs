@@ -347,7 +347,6 @@ app.post("/ingest", async (req, res) => {
 
       await bigquery.dataset(DATASET).table(TABLE).insert(rows);
 
-      // Cache session title from first user message (if not already cached)
       const titleRef = firestore.doc(`session_titles/${studentId}/${session_id}/meta`);
       const titleDoc = await titleRef.get();
       if (!titleDoc.exists) {
@@ -368,9 +367,6 @@ app.post("/ingest", async (req, res) => {
             break;
           }
         }
-      } else {
-        // Update timestamp for last activity
-        await titleRef.update({ updated_at: new Date() });
       }
     }
 
@@ -484,14 +480,33 @@ app.delete("/admin/allowlist/email", async (req, res) => {
   res.json({ status: "ok", emails: list });
 });
 
+/* ── Portal helpers ── */
+
+/** Auth middleware — extracts email from JWT or returns 401 */
+function requireAuth(req, res) {
+  try { return authenticate(req); } catch (err) {
+    res.status(401).json({ error: err.message });
+    return null;
+  }
+}
+
+/** Cached survey config (refreshed every 60s) */
+let _surveyConfigCache = null;
+let _surveyConfigExpiry = 0;
+async function getUnlockedSurveys() {
+  if (Date.now() < _surveyConfigExpiry) return _surveyConfigCache;
+  const doc = await firestore.doc("survey_config/current").get();
+  _surveyConfigCache = doc.exists ? doc.data().unlocked || [] : ["pre_study"];
+  _surveyConfigExpiry = Date.now() + 60_000;
+  return _surveyConfigCache;
+}
+
 /* ── Portal endpoints ── */
 
 /** GET /portal/sessions — list student's sessions grouped by project */
 app.get("/portal/sessions", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const offset = parseInt(req.query.offset) || 0;
@@ -516,14 +531,15 @@ app.get("/portal/sessions", async (req, res) => {
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
 
-    // Read titles from Firestore cache (fast)
+    // Read titles from Firestore cache (single batched RPC)
     const titles = {};
-    const titleDocs = await Promise.all(
-      pageRows.map((r) => firestore.doc(`session_titles/${email}/${r.session_id}/meta`).get())
-    );
-    titleDocs.forEach((doc, i) => {
-      if (doc.exists) titles[pageRows[i].session_id] = doc.data().title;
-    });
+    if (pageRows.length > 0) {
+      const titleRefs = pageRows.map((r) => firestore.doc(`session_titles/${email}/${r.session_id}/meta`));
+      const titleDocs = await firestore.getAll(...titleRefs);
+      titleDocs.forEach((doc, i) => {
+        if (doc.exists) titles[pageRows[i].session_id] = doc.data().title;
+      });
+    }
 
     const projects = {};
     for (const row of pageRows) {
@@ -556,29 +572,24 @@ app.get("/portal/sessions", async (req, res) => {
 
 /** GET /portal/consent — get research-use consent state */
 app.get("/portal/consent", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
   const doc = await firestore.doc(`consent/${email}`).get();
   if (!doc.exists) {
-    return res.json({ research_use: false, status: "none" });
+    return res.json({ research_use: false });
   }
   const data = doc.data();
   res.json({
     research_use: data.research_use || false,
-    status: data.status || "none",
     consented_at: data.consented_at?.toDate?.()?.toISOString() || null,
   });
 });
 
 /** POST /portal/consent — toggle research-use consent */
 app.post("/portal/consent", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
   const { research_use } = req.body;
   if (typeof research_use !== "boolean") {
@@ -591,8 +602,7 @@ app.post("/portal/consent", async (req, res) => {
 
   const update = {
     research_use,
-    status: research_use ? "opted_in" : "opted_out",
-    status_changed_at: new Date(),
+    changed_at: new Date(),
   };
 
   if (research_use && !existing.anon_id) {
@@ -608,24 +618,25 @@ app.post("/portal/consent", async (req, res) => {
 
 /** GET /portal/survey — get survey status and any existing responses */
 app.get("/portal/survey", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
-  // Which surveys are unlocked
-  const configDoc = await firestore.doc("survey_config/current").get();
-  const unlocked = configDoc.exists ? configDoc.data().unlocked || [] : ["pre_study"];
+  const surveyIds = ["pre_study", "mid_semester", "post_study"];
+  const unlocked = await getUnlockedSurveys();
 
-  // Get student's responses
+  // Fetch all responses in parallel (single batched read)
+  const unlockedIds = surveyIds.filter((id) => unlocked.includes(id));
+  const refs = unlockedIds.map((id) => firestore.doc(`survey_responses/${email}/${id}/data`));
+  const docs = refs.length > 0 ? await firestore.getAll(...refs) : [];
+
   const surveys = {};
-  for (const surveyId of ["pre_study", "mid_semester", "post_study"]) {
+  let docIdx = 0;
+  for (const surveyId of surveyIds) {
     if (!unlocked.includes(surveyId)) {
       surveys[surveyId] = { status: "locked" };
       continue;
     }
-
-    const respDoc = await firestore.doc(`survey_responses/${email}/${surveyId}/data`).get();
+    const respDoc = docs[docIdx++];
     if (!respDoc.exists) {
       surveys[surveyId] = { status: "not_started", responses: null };
     } else {
@@ -643,19 +654,15 @@ app.get("/portal/survey", async (req, res) => {
 
 /** POST /portal/survey — submit or update survey responses */
 app.post("/portal/survey", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
   const { survey_id, responses, completed } = req.body;
   if (!survey_id || !responses) {
     return res.status(400).json({ error: "Missing survey_id or responses" });
   }
 
-  // Check survey is unlocked
-  const configDoc = await firestore.doc("survey_config/current").get();
-  const unlocked = configDoc.exists ? configDoc.data().unlocked || [] : ["pre_study"];
+  const unlocked = await getUnlockedSurveys();
   if (!unlocked.includes(survey_id)) {
     return res.status(403).json({ error: "This survey is not currently available" });
   }
@@ -679,10 +686,8 @@ app.post("/portal/survey", async (req, res) => {
 
 /** POST /portal/delete-request — request data deletion */
 app.post("/portal/delete-request", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
   const { project_path, session_id, reason } = req.body;
   if (!project_path) return res.status(400).json({ error: "Missing project_path" });
@@ -702,10 +707,8 @@ app.post("/portal/delete-request", async (req, res) => {
 
 /** GET /portal/delete-requests — list student's delete requests */
 app.get("/portal/delete-requests", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
+  const email = requireAuth(req, res);
+  if (!email) return;
 
   const snapshot = await firestore.collection("delete_requests")
     .where("student_id", "==", email)
