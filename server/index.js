@@ -583,6 +583,7 @@ app.get("/portal/consent", async (req, res) => {
   res.json({
     research_use: data.research_use || false,
     consented_at: data.consented_at?.toDate?.()?.toISOString() || null,
+    signed_at: data.signed_at?.toDate?.()?.toISOString() || null,
   });
 });
 
@@ -644,6 +645,7 @@ app.get("/portal/survey", async (req, res) => {
         status: data.status || "in_progress",
         responses: data.responses || {},
         completed_at: data.completed_at?.toDate?.()?.toISOString() || null,
+        signed_at: data.signed_at?.toDate?.()?.toISOString() || null,
       };
     }
   }
@@ -685,6 +687,46 @@ app.post("/portal/survey", async (req, res) => {
   await ref.set(update, { merge: true });
 
   res.json({ status: "ok", survey_id, survey_status: update.status });
+});
+
+/** POST /portal/consent/sign — sign the consent form (locks it) */
+app.post("/portal/consent/sign", async (req, res) => {
+  const email = requireAuth(req, res);
+  if (!email) return;
+
+  const ref = firestore.doc(`consent/${email}`);
+  const doc = await ref.get();
+  if (!doc.exists) {
+    return res.status(400).json({ error: "No consent record found. Set your consent preference first." });
+  }
+  const existing = doc.data();
+  if (existing.signed_at) {
+    return res.status(403).json({ error: "Consent form already signed." });
+  }
+
+  await ref.update({ signed_at: new Date(), signed_by: email });
+  res.json({ status: "ok", signed_at: new Date().toISOString() });
+});
+
+/** POST /portal/survey/sign — sign a completed survey (locks it) */
+app.post("/portal/survey/sign", async (req, res) => {
+  const email = requireAuth(req, res);
+  if (!email) return;
+
+  const { survey_id } = req.body;
+  if (!survey_id) return res.status(400).json({ error: "Missing survey_id" });
+
+  const ref = firestore.doc(`survey_responses/${email}/${survey_id}/data`);
+  const doc = await ref.get();
+  if (!doc.exists || doc.data().status !== "completed") {
+    return res.status(400).json({ error: "Survey must be submitted before signing." });
+  }
+  if (doc.data().signed_at) {
+    return res.status(403).json({ error: "Survey already signed." });
+  }
+
+  await ref.update({ signed_at: new Date(), signed_by: email });
+  res.json({ status: "ok", signed_at: new Date().toISOString() });
 });
 
 /** POST /portal/delete-request — request data deletion */

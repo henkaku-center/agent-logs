@@ -18,6 +18,59 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// ── Sign & PDF Export ──
+
+function showSignModal(title, onConfirm) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>${title}</h3>
+      <div class="info-box warning">
+        <p style="margin-bottom:0">By signing, you confirm that you have read and understood this document. <strong>This action cannot be undone.</strong></p>
+      </div>
+      <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-confirm">Sign</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById("modal-cancel").addEventListener("click", () => overlay.remove());
+  document.getElementById("modal-confirm").addEventListener("click", async () => {
+    try {
+      await onConfirm();
+    } finally {
+      overlay.remove();
+    }
+  });
+}
+
+function exportPDF(title, contentHtml) {
+  const win = window.open("", "_blank");
+  const auth = getToken();
+  win.document.write(`<!DOCTYPE html>
+<html><head><title>${title}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; max-width: 700px; margin: 40px auto; font-size: 14px; line-height: 1.6; color: #333; }
+  h1 { font-size: 20px; border-bottom: 2px solid #000; padding-bottom: 8px; }
+  h2 { font-size: 16px; margin-top: 24px; }
+  .meta { color: #666; font-size: 12px; margin-bottom: 24px; }
+  .signature { margin-top: 32px; padding-top: 16px; border-top: 2px solid #000; }
+  .signature .check { color: #2E7D32; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; }
+  th { font-weight: bold; font-size: 12px; text-transform: uppercase; color: #666; }
+  @media print { body { margin: 20px; } }
+</style></head><body>
+  <h1>${title}</h1>
+  <div class="meta">Student: ${auth?.email || ""} · Exported: ${new Date().toLocaleString()}</div>
+  ${contentHtml}
+</body></html>`);
+  win.document.close();
+  win.print();
+}
+
 // ── Auth ──
 
 function getToken() {
@@ -318,27 +371,64 @@ async function loadConsent() {
   const toggle = document.getElementById("research-toggle");
   const status = document.getElementById("consent-status");
   const label = document.getElementById("consent-label");
+  const signArea = document.getElementById("consent-sign-area");
 
   try {
     const data = await apiFetch("/portal/consent");
     toggle.checked = data.research_use;
     updateConsentUI(data.research_use, status, label);
 
-    // Remove old listener by cloning
-    const newToggle = toggle.cloneNode(true);
-    toggle.parentNode.replaceChild(newToggle, toggle);
-    newToggle.addEventListener("change", async () => {
-      try {
-        const result = await apiFetch("/portal/consent", {
-          method: "POST",
-          body: { research_use: newToggle.checked },
+    const isSigned = !!data.signed_at;
+
+    if (isSigned) {
+      // Locked — disable toggle, show signed status + export
+      toggle.disabled = true;
+      signArea.innerHTML = `
+        <div class="info-box" style="margin-top:24px">
+          <strong>✓ Signed ${new Date(data.signed_at).toLocaleDateString()}</strong>
+          <p style="margin-bottom:0">Your consent form has been signed and locked.</p>
+        </div>
+        <button class="btn btn-secondary" id="consent-export-pdf" style="margin-top:12px">Export PDF</button>
+      `;
+      document.getElementById("consent-export-pdf").addEventListener("click", () => {
+        exportPDF("Consent Form — Agent Logs", `
+          <h2>Consent Preferences</h2>
+          <table>
+            <tr><th>Educational-use</th><td>✓ Enabled (course requirement)</td></tr>
+            <tr><th>Research-use</th><td>${data.research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
+          </table>
+          <div class="signature">
+            <p class="check">✓ Signed by student on ${new Date(data.signed_at).toLocaleString()}</p>
+          </div>
+        `);
+      });
+    } else {
+      // Not signed — allow toggle changes + show sign button
+      const newToggle = toggle.cloneNode(true);
+      toggle.parentNode.replaceChild(newToggle, toggle);
+      newToggle.addEventListener("change", async () => {
+        try {
+          const result = await apiFetch("/portal/consent", {
+            method: "POST",
+            body: { research_use: newToggle.checked },
+          });
+          updateConsentUI(result.research_use, status, label);
+        } catch (err) {
+          newToggle.checked = !newToggle.checked;
+          alert(err.message);
+        }
+      });
+
+      signArea.innerHTML = `
+        <button class="btn btn-primary" id="consent-sign-btn" style="margin-top:24px">Sign consent form</button>
+      `;
+      document.getElementById("consent-sign-btn").addEventListener("click", () => {
+        showSignModal("Sign Consent Form", async () => {
+          await apiFetch("/portal/consent/sign", { method: "POST", body: {} });
+          loadConsent(); // Reload to show signed state
         });
-        updateConsentUI(result.research_use, status, label);
-      } catch (err) {
-        newToggle.checked = !newToggle.checked;
-        alert(err.message);
-      }
-    });
+      });
+    }
   } catch (err) {
     status.textContent = err.message;
     status.className = "consent-status off";
@@ -386,8 +476,23 @@ async function loadSurvey() {
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span>${badge}</div>`;
     }).join("");
 
+    // Add sign/export buttons for completed surveys
+    const signButtons = surveyOrder.map((id) => {
+      const s = data.surveys[id];
+      if (s.status !== "completed") return "";
+      const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[id];
+      if (s.signed_at) {
+        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${label} signed ${new Date(s.signed_at).toLocaleDateString()}</span>
+          <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button></div>`;
+      }
+      return `<div style="margin:8px 0">
+        <button class="btn btn-primary" onclick="signSurvey('${id}')">Sign ${label} survey</button>
+        <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button>
+      </div>`;
+    }).join("");
+
     if (!activeSurvey) {
-      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div><div class="info-box"><strong>All available surveys complete.</strong> Thank you for your responses.</div>`;
+      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}<div class="info-box"><strong>All available surveys complete.</strong> Thank you for your responses.</div>`;
       return;
     }
 
@@ -573,3 +678,38 @@ function renderSurveyForm(surveyId, responses) {
     </form>
   `;
 }
+
+// Global handlers for survey sign/export (called from onclick in rendered HTML)
+window.signSurvey = function(surveyId) {
+  const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[surveyId];
+  showSignModal(`Sign ${label} Survey`, async () => {
+    await apiFetch("/portal/survey/sign", { method: "POST", body: { survey_id: surveyId } });
+    loadSurvey();
+  });
+};
+
+window.exportSurveyPDF = async function(surveyId) {
+  const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[surveyId];
+  try {
+    const data = await apiFetch("/portal/survey");
+    const survey = data.surveys[surveyId];
+    if (!survey || !survey.responses) { alert("No responses to export."); return; }
+
+    const responses = survey.responses;
+    const rows = Object.entries(responses).map(([k, v]) =>
+      `<tr><td style="font-weight:700;width:120px">${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`
+    ).join("");
+
+    const signLine = survey.signed_at
+      ? `<p class="check">✓ Signed by student on ${new Date(survey.signed_at).toLocaleString()}</p>`
+      : `<p style="color:#666">Not yet signed</p>`;
+
+    exportPDF(`${label} Survey — Agent Logs`, `
+      <h2>Responses</h2>
+      <table>${rows}</table>
+      <div class="signature">${signLine}</div>
+    `);
+  } catch (err) {
+    alert(err.message);
+  }
+};

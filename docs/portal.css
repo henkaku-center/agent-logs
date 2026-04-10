@@ -322,6 +322,29 @@ details[open] > .session-project-header::before {
   padding: 24px 0;
 }
 
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: white;
+  padding: 32px;
+  max-width: 480px;
+  width: 90%;
+}
+
+.modal h3 {
+  font-size: 20px;
+  margin-bottom: 16px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .likert-scale { flex-wrap: wrap; }
