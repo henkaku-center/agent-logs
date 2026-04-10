@@ -37,6 +37,24 @@ export function getToken() {
 }
 
 /**
+ * Authenticated fetch wrapper for server API calls.
+ */
+export async function authFetch(path, method = "GET", body) {
+  const token = getToken();
+  const resp = await fetch(`${INGESTION_URL}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `Request failed: ${resp.status}`);
+  return data;
+}
+
+/**
  * Magic code login flow:
  * 1. Read email from Claude config or prompt
  * 2. Server checks allowlist, sends 6-digit code via email

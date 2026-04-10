@@ -3,7 +3,7 @@ import { BigQuery } from "@google-cloud/bigquery";
 import { Firestore } from "@google-cloud/firestore";
 import jwt from "jsonwebtoken";
 import { google } from "googleapis";
-import { randomInt } from "crypto";
+import { randomInt, randomUUID } from "crypto";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -606,7 +606,6 @@ app.post("/portal/consent", async (req, res) => {
   };
 
   if (research_use && !existing.anon_id) {
-    const { randomUUID } = await import("crypto");
     update.anon_id = randomUUID();
     update.consented_at = new Date();
   }

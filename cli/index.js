@@ -2,7 +2,7 @@
 
 import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
-import { login, getToken } from "./auth.js";
+import { login, getToken, authFetch } from "./auth.js";
 import { registerHooks, unregisterHooks, hooksRegistered } from "./hooks.js";
 import { sync } from "./sync.js";
 
@@ -291,34 +291,9 @@ switch (command) {
     const subcommand = process.argv[3];
     const arg = process.argv[4];
 
-    let token;
-    try {
-      token = getToken();
-    } catch (err) {
-      console.error("Auth failed:", err.message);
-      process.exit(1);
-    }
-
-    const adminFetch = async (path, method = "GET", body) => {
-      const resp = await fetch(`${INGESTION_URL}${path}`, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        console.error(`Error: ${data.error}`);
-        process.exit(1);
-      }
-      return data;
-    };
-
     switch (subcommand) {
       case "list": {
-        const data = await adminFetch("/admin/allowlist");
+        const data = await authFetch("/admin/allowlist");
         console.log("Allowed domains:");
         for (const d of data.domains) console.log(`  @${d}`);
         console.log("\nAllowed emails:");
@@ -330,25 +305,25 @@ switch (command) {
       }
       case "add-domain": {
         if (!arg) { console.error("Usage: agent-logs admin add-domain <domain>"); process.exit(1); }
-        const data = await adminFetch("/admin/allowlist/domain", "POST", { domain: arg });
+        const data = await authFetch("/admin/allowlist/domain", "POST", { domain: arg });
         console.log(`Added @${arg}. Domains: ${data.domains.map(d => "@" + d).join(", ")}`);
         break;
       }
       case "remove-domain": {
         if (!arg) { console.error("Usage: agent-logs admin remove-domain <domain>"); process.exit(1); }
-        const data = await adminFetch("/admin/allowlist/domain", "DELETE", { domain: arg });
+        const data = await authFetch("/admin/allowlist/domain", "DELETE", { domain: arg });
         console.log(`Removed @${arg}. Domains: ${data.domains.map(d => "@" + d).join(", ")}`);
         break;
       }
       case "add-email": {
         if (!arg) { console.error("Usage: agent-logs admin add-email <email>"); process.exit(1); }
-        const data = await adminFetch("/admin/allowlist/email", "POST", { allow_email: arg });
+        const data = await authFetch("/admin/allowlist/email", "POST", { allow_email: arg });
         console.log(`Added ${arg}. Emails: ${data.emails.join(", ")}`);
         break;
       }
       case "remove-email": {
         if (!arg) { console.error("Usage: agent-logs admin remove-email <email>"); process.exit(1); }
-        const data = await adminFetch("/admin/allowlist/email", "DELETE", { allow_email: arg });
+        const data = await authFetch("/admin/allowlist/email", "DELETE", { allow_email: arg });
         console.log(`Removed ${arg}. Emails: ${data.emails.join(", ")}`);
         break;
       }
