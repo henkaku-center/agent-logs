@@ -669,6 +669,10 @@ app.post("/portal/survey", async (req, res) => {
   const ref = firestore.doc(`survey_responses/${email}/${survey_id}/data`);
   const existing = (await ref.get()).data() || {};
 
+  if (existing.status === "completed") {
+    return res.status(403).json({ error: "Survey already submitted. Responses cannot be changed." });
+  }
+
   const update = {
     responses: { ...(existing.responses || {}), ...responses },
     updated_at: new Date(),

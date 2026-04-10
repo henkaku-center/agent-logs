@@ -235,11 +235,21 @@ switch (command) {
     const cyanBold = (s) => `\x1b[1;36m${s}\x1b[0m`;
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-    // TODO: detect consent tiers from portal once available
-    const edu = true;
-    const res = false;
-
     if (projects.shared.includes(cwd)) {
+      const edu = true; // Always true for shared projects
+      let res = projects.research_use || false;
+      try {
+        const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
+          headers: { Authorization: `Bearer ${readToken()?.token}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          res = data.research_use || false;
+        }
+      } catch {
+        // Offline fallback — use cached value
+      }
       const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
       const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
 
