@@ -30,7 +30,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production";
 const GMAIL_SENDER = process.env.GMAIL_SENDER || "claude@chibatech.dev";
 
 /** Admin emails that can manage the allowlist */
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "grisha@henkaku.center")
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "grisha@henkaku.center,contact@gszep.com")
   .split(",")
   .map((e) => e.trim().toLowerCase());
 
