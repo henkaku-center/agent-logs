@@ -232,45 +232,81 @@ async function loadDashboard() {
 
 // ── Sessions ──
 
-async function loadSessions() {
+let sessionsOffset = 0;
+let allSessionProjects = {};
+
+async function loadSessions(append = false) {
   const container = document.getElementById("sessions-container");
-  container.innerHTML = '<p class="loading">Loading sessions...</p>';
+  if (!append) {
+    container.innerHTML = '<p class="loading">Loading sessions...</p>';
+    sessionsOffset = 0;
+    allSessionProjects = {};
+  }
+
   try {
-    const data = await apiFetch("/portal/sessions");
-    if (data.projects.length === 0) {
+    const data = await apiFetch(`/portal/sessions?limit=20&offset=${sessionsOffset}`);
+
+    if (!append && data.projects.length === 0) {
       container.innerHTML = "<p>No sessions synced yet. Use Claude Code in a shared project to generate session logs.</p>";
       return;
     }
-    container.innerHTML = data.projects.map((project) => {
-      const name = project.project_path.split("/").pop();
-      const count = project.sessions.length;
-      return `
-        <details class="session-project">
-          <summary class="session-project-header">
-            <span class="session-project-name">${escapeHtml(name)}</span>
-            <span class="session-project-count">${count} session${count === 1 ? "" : "s"}</span>
-          </summary>
-          <div class="session-project-body">
-            ${project.sessions.map((s) => {
-              const title = s.title || "Untitled session";
-              const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
-              const ago = timeAgo(s.last_timestamp);
-              return `
-                <div class="session-row">
-                  <div>
-                    <div class="session-title">${escapeHtml(truncated)}</div>
-                    <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses</div>
-                  </div>
-                </div>
-              `;
-            }).join("")}
-          </div>
-        </details>
-      `;
-    }).join("");
+
+    // Merge into existing project groups
+    for (const project of data.projects) {
+      if (!allSessionProjects[project.project_path]) {
+        allSessionProjects[project.project_path] = [];
+      }
+      allSessionProjects[project.project_path].push(...project.sessions);
+    }
+
+    sessionsOffset += data.limit;
+
+    renderSessions(container, data.has_more);
   } catch (err) {
-    container.innerHTML = `<p class="form-error">${err.message}</p>`;
+    if (!append) {
+      container.innerHTML = `<p class="form-error">${err.message}</p>`;
+    }
   }
+}
+
+function renderSessions(container, hasMore) {
+  const projectsHtml = Object.entries(allSessionProjects).map(([path, sessions]) => {
+    const name = path.split("/").pop();
+    const count = sessions.length;
+    return `
+      <details class="session-project">
+        <summary class="session-project-header">
+          <span class="session-project-name">${escapeHtml(name)}</span>
+          <span class="session-project-count">${count} session${count === 1 ? "" : "s"}</span>
+        </summary>
+        <div class="session-project-body">
+          ${sessions.map((s) => {
+            const title = s.title || "Untitled session";
+            const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
+            const ago = timeAgo(s.last_timestamp);
+            return `
+              <div class="session-row">
+                <div>
+                  <div class="session-title">${escapeHtml(truncated)}</div>
+                  <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses</div>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </details>
+    `;
+  }).join("");
+
+  const loadMoreHtml = hasMore
+    ? '<div style="text-align:center;margin:24px 0"><button class="btn btn-secondary" id="load-more-sessions">Load more sessions</button></div>'
+    : "";
+
+  container.innerHTML = projectsHtml + loadMoreHtml;
+
+  document.getElementById("load-more-sessions")?.addEventListener("click", () => {
+    loadSessions(true);
+  });
 }
 
 // ── Consent ──

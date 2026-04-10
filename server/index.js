@@ -346,6 +346,32 @@ app.post("/ingest", async (req, res) => {
       });
 
       await bigquery.dataset(DATASET).table(TABLE).insert(rows);
+
+      // Cache session title from first user message (if not already cached)
+      const titleRef = firestore.doc(`session_titles/${studentId}/${session_id}/meta`);
+      const titleDoc = await titleRef.get();
+      if (!titleDoc.exists) {
+        for (const line of linesToInsert) {
+          let parsed;
+          try { parsed = JSON.parse(line); } catch { continue; }
+          if (parsed.type !== "user") continue;
+          const content = parsed.message?.content;
+          let text = typeof content === "string" ? content
+            : Array.isArray(content) ? (content.find((c) => c.type === "text")?.text || "") : "";
+          if (text.startsWith("<system>") || text.startsWith("# ")) continue;
+          if (text) {
+            await titleRef.set({
+              title: text.slice(0, 100),
+              project_path,
+              updated_at: new Date(),
+            });
+            break;
+          }
+        }
+      } else {
+        // Update timestamp for last activity
+        await titleRef.update({ updated_at: new Date() });
+      }
     }
 
     return res.json({
@@ -467,8 +493,11 @@ app.get("/portal/sessions", async (req, res) => {
     return res.status(401).json({ error: err.message });
   }
 
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = parseInt(req.query.offset) || 0;
+
   try {
-    // Session summaries
+    // Session summaries with pagination
     const [rows] = await bigquery.query({
       query: `SELECT project_path, session_id,
                      MIN(timestamp) AS first_timestamp,
@@ -479,43 +508,25 @@ app.get("/portal/sessions", async (req, res) => {
               FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
               WHERE student_id = @student_id
               GROUP BY project_path, session_id
-              ORDER BY MAX(timestamp) DESC`,
-      params: { student_id: email },
+              ORDER BY MAX(timestamp) DESC
+              LIMIT @limit OFFSET @offset`,
+      params: { student_id: email, limit: limit + 1, offset },
     });
 
-    // Get first user message per session as title
-    const sessionIds = rows.map((r) => r.session_id);
-    let titles = {};
-    if (sessionIds.length > 0) {
-      const [titleRows] = await bigquery.query({
-        query: `SELECT session_id, data
-                FROM (
-                  SELECT session_id, data, timestamp,
-                         ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY timestamp ASC) AS rn
-                  FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
-                  WHERE student_id = @student_id
-                    AND record_type = 'user'
-                    AND session_id IN UNNEST(@session_ids)
-                )
-                WHERE rn = 1`,
-        params: { student_id: email, session_ids: sessionIds },
-        types: { session_ids: ["STRING"] },
-      });
-      for (const r of titleRows) {
-        try {
-          const d = JSON.parse(r.data);
-          const content = d.message?.content;
-          let text = typeof content === "string" ? content
-            : Array.isArray(content) ? (content.find((c) => c.type === "text")?.text || "") : "";
-          // Skip system messages as titles
-          if (text.startsWith("<system>") || text.startsWith("# ")) text = "";
-          if (text) titles[r.session_id] = text.slice(0, 100);
-        } catch {}
-      }
-    }
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+
+    // Read titles from Firestore cache (fast)
+    const titles = {};
+    const titleDocs = await Promise.all(
+      pageRows.map((r) => firestore.doc(`session_titles/${email}/${r.session_id}/meta`).get())
+    );
+    titleDocs.forEach((doc, i) => {
+      if (doc.exists) titles[pageRows[i].session_id] = doc.data().title;
+    });
 
     const projects = {};
-    for (const row of rows) {
+    for (const row of pageRows) {
       if (!projects[row.project_path]) projects[row.project_path] = [];
       projects[row.project_path].push({
         session_id: row.session_id,
@@ -533,6 +544,9 @@ app.get("/portal/sessions", async (req, res) => {
         project_path: path,
         sessions,
       })),
+      has_more: hasMore,
+      offset,
+      limit,
     });
   } catch (err) {
     console.error("Sessions query error:", err);
