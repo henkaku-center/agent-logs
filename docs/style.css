@@ -122,6 +122,11 @@ strong { font-weight: 700; }
   text-decoration: none;
 }
 
+.site-header nav a.nav-active {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 /* ── Hero ── */
 
 .hero {

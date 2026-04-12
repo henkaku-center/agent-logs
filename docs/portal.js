@@ -122,7 +122,11 @@ document.addEventListener("DOMContentLoaded", () => {
 function showLogin() {
   document.getElementById("login-section").style.display = "";
   document.getElementById("portal").style.display = "none";
-  document.getElementById("auth-bar").innerHTML = "";
+  document.getElementById("auth-bar").innerHTML = '<a href="#" id="login-link">Log in</a>';
+  document.getElementById("login-link")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("login-email")?.focus();
+  });
 }
 
 function showPortal(email) {

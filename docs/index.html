@@ -16,11 +16,24 @@
         <img src="assets/henkaku-center-logo-white.png" alt="Henkaku Center" class="logo">
       </a>
       <nav>
-        <a href="portal.html">Participant Portal</a>
+        <a href="index.html" class="nav-active">Documentation</a>
+        <a href="portal.html">Portal</a>
         <span class="auth-bar" id="auth-bar"></span>
       </nav>
     </div>
   </header>
+  <script>
+    const t = localStorage.getItem("agent_logs_token");
+    const bar = document.getElementById("auth-bar");
+    if (t) {
+      try {
+        const p = JSON.parse(atob(t.split(".")[1]));
+        if (p.exp * 1000 > Date.now()) {
+          bar.innerHTML = `<span class="user-name">${p.email}</span> · <a href="#" onclick="localStorage.removeItem('agent_logs_token');location.reload()">Log out</a>`;
+        } else { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
+      } catch { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
+    } else { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
+  </script>
 
   <!-- Hero -->
   <section class="hero">
