@@ -771,79 +771,57 @@ app.get("/portal/delete-requests", async (req, res) => {
   res.json({ requests });
 });
 
-/* ── OTLP ingestion (Cowork telemetry) ── */
-// Accepts OTLP HTTP/JSON from Claude Cowork.
+/* ── OTLP ingestion (Claude Code & Cowork telemetry) ── */
+// Accepts OTLP HTTP/JSON logs/events from Claude Code and Cowork.
+// Events: user_prompt, tool_result, api_request, api_error, tool_decision
 // Future: Compliance API will be another data source once Enterprise upgrade completes.
 
+function parseOtlpAttributes(attrs) {
+  const result = {};
+  for (const attr of attrs || []) {
+    const v = attr.value;
+    result[attr.key] = v?.stringValue ?? v?.intValue ?? v?.doubleValue ?? v?.boolValue ?? "";
+  }
+  return result;
+}
+
 /**
- * POST /v1/traces — OTLP HTTP/JSON endpoint
- * Receives OpenTelemetry span data from Claude Cowork.
+ * POST /v1/logs — OTLP HTTP/JSON logs endpoint
+ * Receives OpenTelemetry log records from Claude Code/Cowork.
  * Auth via Bearer token in OTLP headers (shared secret).
  */
-app.post("/v1/traces", async (req, res) => {
-  // Validate OTLP auth
+app.post("/v1/logs", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== `Bearer ${OTLP_SECRET}`) {
     return res.status(401).json({ error: "Invalid OTLP authorization" });
   }
 
   try {
-    const { resourceSpans } = req.body;
-    if (!resourceSpans || !Array.isArray(resourceSpans)) {
-      return res.status(400).json({ error: "Invalid OTLP payload" });
+    const { resourceLogs } = req.body;
+    if (!resourceLogs || !Array.isArray(resourceLogs)) {
+      return res.status(400).json({ error: "Invalid OTLP logs payload" });
     }
 
     const rows = [];
 
-    for (const rs of resourceSpans) {
-      // Extract resource attributes (org, user)
-      const resourceAttrs = {};
-      for (const attr of rs.resource?.attributes || []) {
-        resourceAttrs[attr.key] = attr.value?.stringValue || attr.value?.intValue || "";
-      }
+    for (const rl of resourceLogs) {
+      const resourceAttrs = parseOtlpAttributes(rl.resource?.attributes);
 
-      for (const scopeSpan of rs.scopeSpans || []) {
-        for (const span of scopeSpan.spans || []) {
-          // Extract span attributes
-          const attrs = {};
-          for (const attr of span.attributes || []) {
-            attrs[attr.key] = attr.value?.stringValue || attr.value?.intValue || "";
-          }
+      for (const scopeLog of rl.scopeLogs || []) {
+        for (const logRecord of scopeLog.logRecords || []) {
+          const attrs = parseOtlpAttributes(logRecord.attributes);
 
-          // Map OTel events to our schema
-          for (const event of span.events || []) {
-            const eventAttrs = {};
-            for (const attr of event.attributes || []) {
-              eventAttrs[attr.key] = attr.value?.stringValue || attr.value?.intValue || "";
-            }
-
-            rows.push({
-              user_email: resourceAttrs["user.email"] || attrs["user.email"] || "",
-              organization_id: resourceAttrs["organization.id"] || attrs["organization.id"] || "",
-              session_id: attrs["session.id"] || span.traceId || "",
-              prompt_id: attrs["prompt.id"] || eventAttrs["prompt.id"] || "",
-              event_type: event.name || "unknown",
-              timestamp: event.timeUnixNano
-                ? new Date(Number(BigInt(event.timeUnixNano) / 1000000n)).toISOString()
-                : new Date().toISOString(),
-              data: JSON.stringify({ span_attrs: attrs, event_attrs: eventAttrs }),
-            });
-          }
-
-          // If no events, store the span itself
-          if (!span.events || span.events.length === 0) {
-            rows.push({
-              user_email: resourceAttrs["user.email"] || attrs["user.email"] || "",
-              organization_id: resourceAttrs["organization.id"] || attrs["organization.id"] || "",
-              session_id: attrs["session.id"] || span.traceId || "",
-              prompt_id: attrs["prompt.id"] || "",
-              event_type: span.name || "span",
-              timestamp: span.startTimeUnixNano
-                ? new Date(Number(BigInt(span.startTimeUnixNano) / 1000000n)).toISOString()
-                : new Date().toISOString(),
-              data: JSON.stringify({ span_attrs: attrs }),
-            });
-          }
+          rows.push({
+            user_email: resourceAttrs["user.email"] || attrs["user.email"] || "",
+            organization_id: resourceAttrs["organization.id"] || attrs["organization.id"] || "",
+            session_id: resourceAttrs["session.id"] || attrs["session.id"] || "",
+            prompt_id: attrs["prompt.id"] || "",
+            event_type: attrs["event.name"] || logRecord.severityText || "unknown",
+            timestamp: logRecord.timeUnixNano
+              ? new Date(Number(BigInt(logRecord.timeUnixNano) / 1000000n)).toISOString()
+              : new Date().toISOString(),
+            data: JSON.stringify({ ...resourceAttrs, ...attrs }),
+          });
         }
       }
     }
@@ -857,6 +835,16 @@ app.post("/v1/traces", async (req, res) => {
     console.error("OTLP ingestion error:", err);
     res.status(500).json({ error: "Failed to ingest telemetry" });
   }
+});
+
+/** POST /v1/traces — accept but no-op (traces not stored yet) */
+app.post("/v1/traces", (req, res) => {
+  res.json({ partialSuccess: {} });
+});
+
+/** POST /v1/metrics — accept but no-op (metrics not stored yet) */
+app.post("/v1/metrics", (req, res) => {
+  res.json({ partialSuccess: {} });
 });
 
 /** Health check */
