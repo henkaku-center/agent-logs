@@ -13,7 +13,7 @@ function setLang(lang) {
   localStorage.setItem("agent_logs_lang", lang);
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-en][data-ja]").forEach((el) => {
-    el.textContent = el.dataset[lang];
+    el.innerHTML = el.dataset[lang];
   });
   const btn = document.getElementById("lang-toggle");
   if (btn) btn.textContent = lang === "en" ? "日本語" : "English";

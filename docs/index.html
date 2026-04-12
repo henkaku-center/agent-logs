@@ -39,7 +39,7 @@
     // Apply language
     const lang = localStorage.getItem("agent_logs_lang") || (navigator.language?.startsWith("ja") ? "ja" : "en");
     document.documentElement.lang = lang;
-    document.querySelectorAll("[data-en][data-ja]").forEach(el => { el.textContent = el.dataset[lang]; });
+    document.querySelectorAll("[data-en][data-ja]").forEach(el => { el.innerHTML = el.dataset[lang]; });
     const lb = document.getElementById("lang-toggle");
     if (lb) lb.textContent = lang === "en" ? "日本語" : "English";
   </script>
@@ -60,7 +60,7 @@
 
       <div class="info-box">
         <strong data-en="Prerequisites" data-ja="前提条件">Prerequisites</strong>
-        <p style="margin-bottom:0" data-en="You need Claude Code installed. Your Claude account email will be detected automatically." data-ja="Claude Codeがインストールされている必要があります。Claudeアカウントのメールアドレスは自動的に検出されます。">You need <a href="https://code.claude.com/docs/en/quickstart">Claude Code</a> installed. Your Claude account email will be detected automatically.</p>
+        <p style="margin-bottom:0" data-en='You need &lt;a href="https://code.claude.com/docs/en/quickstart"&gt;Claude Code&lt;/a&gt; installed. Your Claude account email will be detected automatically.' data-ja='&lt;a href="https://code.claude.com/docs/en/quickstart"&gt;Claude Code&lt;/a&gt;がインストールされている必要があります。Claudeアカウントのメールアドレスは自動的に検出されます。'>You need <a href="https://code.claude.com/docs/en/quickstart">Claude Code</a> installed. Your Claude account email will be detected automatically.</p>
       </div>
 
       <ol class="steps">
@@ -90,7 +90,7 @@
         </li>
         <li>
           <strong data-en="Sign the informed consent form" data-ja="インフォームド・コンセントに署名">Sign the informed consent form</strong>
-          <p data-en="Before Claude will launch, you must read and sign the informed consent form on the Participant Portal. The form explains how your session logs are used for educational evaluation and (optionally) research." data-ja="Claudeを起動する前に、参加者ポータルでインフォームド・コンセントを読み、署名する必要があります。同意書には、セッションログが教育評価および（任意で）研究にどのように使用されるかが説明されています。">Before Claude will launch, you must read and sign the informed consent form on the <a href="portal.html">Participant Portal</a>. The form explains how your session logs are used for educational evaluation and (optionally) research.</p>
+          <p data-en='Before Claude will launch, you must read and sign the informed consent form on the &lt;a href="portal.html"&gt;Participant Portal&lt;/a&gt;. The form explains how your session logs are used for educational evaluation and (optionally) research.' data-ja='Claudeを起動する前に、&lt;a href="portal.html"&gt;参加者ポータル&lt;/a&gt;でインフォームド・コンセントを読み、署名する必要があります。同意書には、セッションログが教育評価および（任意で）研究にどのように使用されるかが説明されています。'>Before Claude will launch, you must read and sign the informed consent form on the <a href="portal.html">Participant Portal</a>. The form explains how your session logs are used for educational evaluation and (optionally) research.</p>
           <div class="code-block">
             <span class="output">────────────────────────────────────────────────────</span><br>
             <span class="output">Agent Logs — Consent Required</span><br>
@@ -122,17 +122,17 @@
         </li>
         <li>
           <strong data-en="Use Claude Code as normal" data-ja="通常通りClaude Codeを使用">Use Claude Code as normal</strong>
-          <p data-en="Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. You can ask Claude to change the share status of your project anytime." data-ja="セッションログはバックグラウンドで自動的に同期されます。Claudeの下部にあるステータスラインに現在の共有状態が表示されます。いつでもClaudeにプロジェクトの共有状態の変更を依頼できます。">Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. <strong>You can ask Claude to change the share status of your project anytime.</strong></p>
+          <p data-en="Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. &lt;strong&gt;You can ask Claude to change the share status of your project anytime.&lt;/strong&gt;" data-ja="セッションログはバックグラウンドで自動的に同期されます。Claudeの下部にあるステータスラインに現在の共有状態が表示されます。&lt;strong&gt;いつでもClaudeにプロジェクトの共有状態の変更を依頼できます。&lt;/strong&gt;">Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. <strong>You can ask Claude to change the share status of your project anytime.</strong></p>
         </li>
         <li>
           <strong data-en="Complete participant surveys" data-ja="参加者アンケートに回答">Complete participant surveys</strong>
-          <p data-en="Visit the Participant Portal to manage your consent settings and complete the participant survey." data-ja="参加者ポータルで同意設定を管理し、参加者アンケートに回答してください。">Visit the <a href="portal.html">Participant Portal</a> to manage your consent settings and complete the participant survey.</p>
+          <p data-en='Visit the &lt;a href="portal.html"&gt;Participant Portal&lt;/a&gt; to manage your consent settings and complete the participant survey.' data-ja='&lt;a href="portal.html"&gt;参加者ポータル&lt;/a&gt;で同意設定を管理し、参加者アンケートに回答してください。'>Visit the <a href="portal.html">Participant Portal</a> to manage your consent settings and complete the participant survey.</p>
         </li>
       </ol>
 
       <div class="info-box">
         <strong data-en="What gets shared?" data-ja="何が共有されますか？">What gets shared?</strong>
-        <p style="margin-bottom:0" data-en="Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are never shared — they are stripped before leaving your machine." data-ja="あなたのプロンプト、Claudeの応答、およびツール呼び出し名が共有されます。ツール結果のファイル内容やファイルスナップショットは共有されません — お使いのマシンから送信される前に除去されます。">Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are <strong>never</strong> shared — they are stripped before leaving your machine.</p>
+        <p style="margin-bottom:0" data-en="Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are &lt;strong&gt;never&lt;/strong&gt; shared — they are stripped before leaving your machine." data-ja="あなたのプロンプト、Claudeの応答、およびツール呼び出し名が共有されます。ツール結果のファイル内容やファイルスナップショットは&lt;strong&gt;共有されません&lt;/strong&gt; — お使いのマシンから送信される前に除去されます。">Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are <strong>never</strong> shared — they are stripped before leaving your machine.</p>
       </div>
     </div>
   </section>
