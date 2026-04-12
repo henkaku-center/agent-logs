@@ -286,6 +286,13 @@ strong { font-weight: 700; }
   line-height: 1.6;
 }
 
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+  background: #f0f0f0;
+  padding: 2px 6px;
+}
+
 .code-block .comment { color: #6a6a8a; }
 .code-block .command { color: #BFE2FE; }
 .code-block .output { color: #7a7a9a; }
