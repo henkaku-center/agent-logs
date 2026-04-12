@@ -504,12 +504,19 @@ app.post("/ingest", async (req, res) => {
 
 /* ── Admin endpoints ── */
 
-app.get("/admin/allowlist", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
+function requireAdmin(req, res) {
+  try {
+    const email = authenticate(req);
+    if (!isAdmin(email)) { res.status(403).json({ error: "Admin access required" }); return null; }
+    return email;
+  } catch (err) {
+    res.status(401).json({ error: err.message });
+    return null;
   }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+}
+
+app.get("/admin/allowlist", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
 
   const domainDoc = await firestore.doc("allowlist/domains").get();
   const emailDoc = await firestore.doc("allowlist/emails").get();
@@ -520,11 +527,7 @@ app.get("/admin/allowlist", async (req, res) => {
 });
 
 app.post("/admin/allowlist/domain", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const { domain } = req.body;
   if (!domain) return res.status(400).json({ error: "Missing domain" });
@@ -541,11 +544,7 @@ app.post("/admin/allowlist/domain", async (req, res) => {
 });
 
 app.delete("/admin/allowlist/domain", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const { domain } = req.body;
   if (!domain) return res.status(400).json({ error: "Missing domain" });
@@ -559,11 +558,7 @@ app.delete("/admin/allowlist/domain", async (req, res) => {
 });
 
 app.post("/admin/allowlist/email", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const { allow_email } = req.body;
   if (!allow_email) return res.status(400).json({ error: "Missing allow_email" });
@@ -580,11 +575,7 @@ app.post("/admin/allowlist/email", async (req, res) => {
 });
 
 app.delete("/admin/allowlist/email", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const { allow_email } = req.body;
   if (!allow_email) return res.status(400).json({ error: "Missing allow_email" });
@@ -604,66 +595,58 @@ const ROLE_VIEW_MAP = {
   researcher: `${PROJECT_ID}.${DATASET}.research_logs_view`,
 };
 
-async function syncViewAccess(role) {
+async function syncViewAccess(role, emails) {
   const viewId = ROLE_VIEW_MAP[role];
   if (!viewId) return;
 
-  const doc = await firestore.doc(`roles/${role}s`).get();
-  const emails = doc.exists ? doc.data().list || [] : [];
-
-  // Grant dataViewer on the specific view
   const table = viewId.split(".").pop();
   const view = bigquery.dataset(DATASET).table(table);
+  const auth = new google.auth.GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
+  const crm = google.cloudresourcemanager({ version: "v1", auth });
 
-  const [policy] = await view.getIamPolicy();
-  policy.bindings = (policy.bindings || []).filter(
+  // Fetch view IAM, project IAM, and the other role's list in parallel
+  const otherRole = role === "instructor" ? "researchers" : "instructors";
+  const [[viewPolicy], { data: projPolicy }, otherDoc] = await Promise.all([
+    view.getIamPolicy(),
+    crm.projects.getIamPolicy({ resource: PROJECT_ID, requestBody: {} }),
+    firestore.doc(`roles/${otherRole}`).get(),
+  ]);
+
+  // Update view-level dataViewer
+  viewPolicy.bindings = (viewPolicy.bindings || []).filter(
     (b) => b.role !== "roles/bigquery.dataViewer"
   );
   if (emails.length > 0) {
-    policy.bindings.push({
+    viewPolicy.bindings.push({
       role: "roles/bigquery.dataViewer",
       members: emails.map((e) => `user:${e}`),
     });
   }
-  await view.setIamPolicy(policy);
 
-  // Grant bigquery.jobUser at project level so they can run queries
-  const auth = new google.auth.GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
-  const crm = google.cloudresourcemanager({ version: "v1", auth });
-  const { data: projPolicy } = await crm.projects.getIamPolicy({
-    resource: PROJECT_ID,
-    requestBody: {},
-  });
-
-  const jobBinding = (projPolicy.bindings || []).find((b) => b.role === "roles/bigquery.jobUser") || { role: "roles/bigquery.jobUser", members: [] };
+  // Update project-level jobUser
   if (!projPolicy.bindings) projPolicy.bindings = [];
-  if (!projPolicy.bindings.includes(jobBinding)) projPolicy.bindings.push(jobBinding);
-
-  // Collect all role emails (instructors + researchers) for jobUser
-  const allRoleDocs = await firestore.getAll(firestore.doc("roles/instructors"), firestore.doc("roles/researchers"));
-  const allRoleEmails = new Set();
-  for (const d of allRoleDocs) {
-    if (d.exists) for (const e of d.data().list || []) allRoleEmails.add(`user:${e}`);
+  let jobBinding = projPolicy.bindings.find((b) => b.role === "roles/bigquery.jobUser");
+  if (!jobBinding) {
+    jobBinding = { role: "roles/bigquery.jobUser", members: [] };
+    projPolicy.bindings.push(jobBinding);
   }
 
-  // Keep non-user members (service accounts), replace user members with our list
+  const otherEmails = otherDoc.exists ? otherDoc.data().list || [] : [];
+  const allRoleEmails = new Set([...emails, ...otherEmails].map((e) => `user:${e}`));
   jobBinding.members = [
     ...jobBinding.members.filter((m) => !m.startsWith("user:")),
     ...allRoleEmails,
   ];
 
-  await crm.projects.setIamPolicy({
-    resource: PROJECT_ID,
-    requestBody: { policy: projPolicy },
-  });
+  // Write both policies in parallel
+  await Promise.all([
+    view.setIamPolicy(viewPolicy),
+    crm.projects.setIamPolicy({ resource: PROJECT_ID, requestBody: { policy: projPolicy } }),
+  ]);
 }
 
 app.get("/admin/roles", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const [instDoc, resDoc] = await firestore.getAll(
     firestore.doc("roles/instructors"),
@@ -676,11 +659,7 @@ app.get("/admin/roles", async (req, res) => {
 });
 
 app.post("/admin/roles/:role", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const { role } = req.params;
   if (!ROLE_VIEW_MAP[role]) return res.status(400).json({ error: "Role must be 'instructor' or 'researcher'" });
@@ -697,19 +676,17 @@ app.post("/admin/roles/:role", async (req, res) => {
     await ref.set({ list });
   }
 
-  try { await syncViewAccess(role); } catch (err) {
+  let warning;
+  try { await syncViewAccess(role, list); } catch (err) {
     console.error(`Failed to sync ${role} view access:`, err.message);
+    warning = "IAM sync failed — role saved but BigQuery permissions may be out of sync";
   }
 
-  res.json({ status: "ok", [`${role}s`]: list });
+  res.json({ status: "ok", [`${role}s`]: list, ...(warning && { warning }) });
 });
 
 app.delete("/admin/roles/:role", async (req, res) => {
-  let email;
-  try { email = authenticate(req); } catch (err) {
-    return res.status(401).json({ error: err.message });
-  }
-  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+  if (!requireAdmin(req, res)) return;
 
   const { role } = req.params;
   if (!ROLE_VIEW_MAP[role]) return res.status(400).json({ error: "Role must be 'instructor' or 'researcher'" });
@@ -723,11 +700,13 @@ app.delete("/admin/roles/:role", async (req, res) => {
   const list = (doc.data().list || []).filter((e) => e !== targetEmail.toLowerCase().trim());
   await ref.set({ list });
 
-  try { await syncViewAccess(role); } catch (err) {
+  let warning;
+  try { await syncViewAccess(role, list); } catch (err) {
     console.error(`Failed to sync ${role} view access:`, err.message);
+    warning = "IAM sync failed — role saved but BigQuery permissions may be out of sync";
   }
 
-  res.json({ status: "ok", [`${role}s`]: list });
+  res.json({ status: "ok", [`${role}s`]: list, ...(warning && { warning }) });
 });
 
 /* ── Portal helpers ── */
@@ -878,8 +857,8 @@ app.post("/portal/consent", async (req, res) => {
             params: { anon_id: anonId },
           });
         } else {
-          // Opt-in: restore any previously revoked rows
-          if (wasOptedIn === false) {
+          // Opt-in: restore previously revoked rows (skip for first-time users)
+          if (existing.research_use === false) {
             await bigquery.query({
               query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = false WHERE anon_id = @anon_id`,
               params: { anon_id: anonId },
