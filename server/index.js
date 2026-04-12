@@ -759,8 +759,62 @@ app.post("/portal/consent/sign", async (req, res) => {
     return res.status(403).json({ error: "Consent form already signed." });
   }
 
-  await ref.update({ signed_at: new Date(), signed_by: email });
-  res.json({ status: "ok", signed_at: new Date().toISOString() });
+  const { consent_html, research_use } = req.body;
+  const signedAt = new Date();
+
+  // Generate archival HTML document
+  const archiveHtml = `<!DOCTYPE html>
+<html><head><title>Informed Consent — Agent Logs</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; max-width: 700px; margin: 40px auto; font-size: 14px; line-height: 1.6; color: #333; }
+  h1 { font-size: 20px; border-bottom: 2px solid #000; padding-bottom: 8px; }
+  h2 { font-size: 16px; margin-top: 24px; }
+  h3 { text-align: center; margin: 0 0 4px; font-size: 16px; }
+  h4 { font-size: 15px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
+  .meta { color: #666; font-size: 12px; margin-bottom: 24px; }
+  .signature { margin-top: 32px; padding-top: 16px; border-top: 2px solid #000; }
+  .signature .check { color: #2E7D32; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; }
+  th { font-weight: bold; font-size: 12px; text-transform: uppercase; color: #666; }
+  ul { padding-left: 20px; } li { margin-bottom: 8px; }
+  .info-box { background: #E3F2FD; padding: 16px 20px; margin: 12px 0; }
+  .info-box.warning { background: #FFF3E0; }
+  @media print { body { margin: 20px; } }
+</style></head><body>
+  <h1>Informed Consent — Agent Logs</h1>
+  <div class="meta">Participant: ${email} · Signed: ${signedAt.toISOString()}</div>
+  <h2>Consent Preferences</h2>
+  <table>
+    <tr><th>Educational-use</th><td>✓ Enabled</td></tr>
+    <tr><th>Research-use</th><td>${research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
+  </table>
+  <div class="signature">
+    <p class="check">✓ Signed by participant on ${signedAt.toLocaleString()}</p>
+  </div>
+  <hr style="margin:32px 0">
+  ${consent_html || ""}
+</body></html>`;
+
+  const consent_pdf = Buffer.from(archiveHtml, "utf8").toString("base64");
+
+  await ref.update({ signed_at: signedAt, signed_by: email, consent_pdf });
+  res.json({ status: "ok", signed_at: signedAt.toISOString() });
+});
+
+/** GET /portal/consent/pdf — download the signed consent form */
+app.get("/portal/consent/pdf", async (req, res) => {
+  const email = requireAuth(req, res);
+  if (!email) return;
+
+  const doc = await firestore.doc(`consent/${email}`).get();
+  if (!doc.exists || !doc.data().consent_pdf) {
+    return res.status(404).json({ error: "No signed consent form found." });
+  }
+
+  const html = Buffer.from(doc.data().consent_pdf, "base64").toString("utf8");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(html);
 });
 
 /** POST /portal/survey/sign — sign a completed survey (locks it) */

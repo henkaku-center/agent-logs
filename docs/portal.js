@@ -436,21 +436,21 @@ async function loadConsent() {
         </div>
         <button class="btn btn-secondary" id="consent-export-pdf" style="margin-top:12px">Export PDF</button>
       `;
-      document.getElementById("consent-export-pdf").addEventListener("click", () => {
-        const formEl = document.getElementById("consent-form-content");
-        const formHtml = formEl ? formEl.innerHTML : "";
-        exportPDF("Informed Consent — Agent Logs", `
-          <h2>Consent Preferences</h2>
-          <table>
-            <tr><th>Educational-use</th><td>✓ Enabled</td></tr>
-            <tr><th>Research-use</th><td>${newRes.checked ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
-          </table>
-          <div class="signature">
-            <p class="check">✓ Signed by participant on ${new Date(data.signed_at).toLocaleString()}</p>
-          </div>
-          <hr style="margin:32px 0">
-          ${formHtml}
-        `);
+      document.getElementById("consent-export-pdf").addEventListener("click", async () => {
+        try {
+          const auth = getToken();
+          const resp = await fetch(`${API}/portal/consent/pdf`, {
+            headers: { Authorization: `Bearer ${auth.token}` },
+          });
+          if (!resp.ok) throw new Error("Failed to fetch consent PDF");
+          const html = await resp.text();
+          const win = window.open("", "_blank");
+          win.document.write(html);
+          win.document.close();
+          win.print();
+        } catch (err) {
+          alert(err.message);
+        }
       });
     } else {
       signArea.innerHTML = `
@@ -465,9 +465,14 @@ async function loadConsent() {
           alert("You must agree to Educational-use before signing the consent form. Research-use is optional and can be changed anytime.");
           return;
         }
+        const consentHtml = document.getElementById("consent-form-content")?.innerHTML || "";
+        const researchUse = newRes.checked;
         showSignModal("Sign Informed Consent", async () => {
-          await apiFetch("/portal/consent/sign", { method: "POST", body: {} });
-          consentSigned = false; // allow reload to show signed state
+          await apiFetch("/portal/consent/sign", {
+            method: "POST",
+            body: { consent_html: consentHtml, research_use: researchUse },
+          });
+          consentSigned = false;
           loadConsent();
         });
       });

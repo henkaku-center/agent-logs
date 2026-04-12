@@ -517,20 +517,30 @@ describe("POST /portal/consent", () => {
 // ── Portal: Consent signing ──
 
 describe("POST /portal/consent/sign", () => {
-  it("signs consent form", async () => {
+  it("signs consent form and stores PDF archive", async () => {
     const token = makeToken("student@chibatech.dev");
-    // Set consent first
     await req("/portal/consent", { method: "POST", token, body: { research_use: true } });
 
-    const { status, data } = await req("/portal/consent/sign", { method: "POST", token, body: {} });
+    const { status, data } = await req("/portal/consent/sign", {
+      method: "POST", token,
+      body: { consent_html: "<p>Test consent content</p>", research_use: true },
+    });
     assert.equal(status, 200);
     assert.ok(data.signed_at);
+
+    // Verify PDF archive stored in Firestore
+    const stored = firestoreData["consent/student@chibatech.dev"];
+    assert.ok(stored.consent_pdf);
+    const html = Buffer.from(stored.consent_pdf, "base64").toString("utf8");
+    assert.ok(html.includes("Test consent content"));
+    assert.ok(html.includes("student@chibatech.dev"));
+    assert.ok(html.includes("✓ Opted in"));
   });
 
   it("rejects double-signing", async () => {
     const token = makeToken("student@chibatech.dev");
     await req("/portal/consent", { method: "POST", token, body: { research_use: true } });
-    await req("/portal/consent/sign", { method: "POST", token, body: {} });
+    await req("/portal/consent/sign", { method: "POST", token, body: { consent_html: "<p>x</p>", research_use: true } });
 
     const { status } = await req("/portal/consent/sign", { method: "POST", token, body: {} });
     assert.equal(status, 403);
@@ -540,6 +550,34 @@ describe("POST /portal/consent/sign", () => {
     const token = makeToken("student@chibatech.dev");
     const { status } = await req("/portal/consent/sign", { method: "POST", token, body: {} });
     assert.equal(status, 400);
+  });
+});
+
+// ── Portal: Consent PDF download ──
+
+describe("GET /portal/consent/pdf", () => {
+  it("returns stored consent PDF as HTML", async () => {
+    const token = makeToken("student@chibatech.dev");
+    await req("/portal/consent", { method: "POST", token, body: { research_use: true } });
+    await req("/portal/consent/sign", {
+      method: "POST", token,
+      body: { consent_html: "<p>Full consent document</p>", research_use: true },
+    });
+
+    const resp = await fetch(`${baseUrl}/portal/consent/pdf`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(resp.status, 200);
+    assert.equal(resp.headers.get("content-type"), "text/html; charset=utf-8");
+    const html = await resp.text();
+    assert.ok(html.includes("Full consent document"));
+    assert.ok(html.includes("student@chibatech.dev"));
+  });
+
+  it("returns 404 if consent not signed", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status } = await req("/portal/consent/pdf", { token });
+    assert.equal(status, 404);
   });
 });
 
