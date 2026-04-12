@@ -48,36 +48,36 @@
   <section class="hero">
     <div class="container">
       <h1>Agent Logs</h1>
-      <p class="subtitle">Session log collection for Claude Code. Your logs help Chiba Tech provide better evaluation and feedback on your projects.</p>
+      <p class="subtitle" data-en="Session log collection for Claude Code. Your logs help Chiba Tech provide better evaluation and feedback on your projects." data-ja="Claude Codeのセッションログ収集ツール。ログは千葉工業大学でのプロジェクト評価とフィードバックに活用されます。">Session log collection for Claude Code. Your logs help Chiba Tech provide better evaluation and feedback on your projects.</p>
     </div>
   </section>
 
   <!-- Getting Started -->
   <section class="section" id="setup">
     <div class="container">
-      <h2>Getting Started</h2>
-      <p>Install the agent-logs CLI to start sharing your Claude Code session logs with Chiba Tech.</p>
+      <h2 data-en="Getting Started" data-ja="はじめに">Getting Started</h2>
+      <p data-en="Install the agent-logs CLI to start sharing your Claude Code session logs with Chiba Tech." data-ja="agent-logs CLIをインストールして、Claude Codeセッションログの共有を開始しましょう。">Install the agent-logs CLI to start sharing your Claude Code session logs with Chiba Tech.</p>
 
       <div class="info-box">
-        <strong>Prerequisites</strong>
-        <p style="margin-bottom:0">You need <a href="https://code.claude.com/docs/en/quickstart">Claude Code</a> installed. Your Claude account email will be detected automatically.</p>
+        <strong data-en="Prerequisites" data-ja="前提条件">Prerequisites</strong>
+        <p style="margin-bottom:0" data-en="You need Claude Code installed. Your Claude account email will be detected automatically." data-ja="Claude Codeがインストールされている必要があります。Claudeアカウントのメールアドレスは自動的に検出されます。">You need <a href="https://code.claude.com/docs/en/quickstart">Claude Code</a> installed. Your Claude account email will be detected automatically.</p>
       </div>
 
       <ol class="steps">
         <li>
-          <strong>Install the CLI</strong>
+          <strong data-en="Install the CLI" data-ja="CLIをインストール">Install the CLI</strong>
           <div class="code-block">
             <span class="comment"># macOS / Linux / WSL</span><br>
             <span class="command">curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash</span>
           </div>
-          <p>Then load the wrapper into your current shell:</p>
+          <p data-en="Then load the wrapper into your current shell:" data-ja="次に、現在のシェルにラッパーを読み込みます：">Then load the wrapper into your current shell:</p>
           <div class="code-block">
             <span class="command">source ~/.bashrc</span> <span class="comment"># or ~/.zshrc for zsh</span>
           </div>
         </li>
         <li>
-          <strong>Launch Claude Code</strong>
-          <p>Navigate to your project directory and run <code>claude</code>. On first launch you'll be asked to verify your email — a code will be sent to your Claude account email.</p>
+          <strong data-en="Launch Claude Code" data-ja="Claude Codeを起動">Launch Claude Code</strong>
+          <p data-en="Navigate to your project directory and run claude. On first launch you'll be asked to verify your email — a code will be sent to your Claude account email." data-ja="プロジェクトディレクトリに移動してclaudeを実行します。初回起動時にメール認証が求められます — Claudeアカウントのメールアドレスにコードが送信されます。">Navigate to your project directory and run <code>claude</code>. On first launch you'll be asked to verify your email — a code will be sent to your Claude account email.</p>
           <div class="code-block">
             <span class="command">cd ~/projects/my-project</span><br>
             <span class="command">claude</span><br>
@@ -89,8 +89,8 @@
           </div>
         </li>
         <li>
-          <strong>Sign the informed consent form</strong>
-          <p>Before Claude will launch, you must read and sign the informed consent form on the <a href="portal.html">Participant Portal</a>. The form explains how your session logs are used for educational evaluation and (optionally) research.</p>
+          <strong data-en="Sign the informed consent form" data-ja="インフォームド・コンセントに署名">Sign the informed consent form</strong>
+          <p data-en="Before Claude will launch, you must read and sign the informed consent form on the Participant Portal. The form explains how your session logs are used for educational evaluation and (optionally) research." data-ja="Claudeを起動する前に、参加者ポータルでインフォームド・コンセントを読み、署名する必要があります。同意書には、セッションログが教育評価および（任意で）研究にどのように使用されるかが説明されています。">Before Claude will launch, you must read and sign the informed consent form on the <a href="portal.html">Participant Portal</a>. The form explains how your session logs are used for educational evaluation and (optionally) research.</p>
           <div class="code-block">
             <span class="output">────────────────────────────────────────────────────</span><br>
             <span class="output">Agent Logs — Consent Required</span><br>
@@ -105,8 +105,8 @@
           </div>
         </li>
         <li>
-          <strong>Choose whether to share this folder</strong>
-          <p>A consent dialog will appear before Claude starts. Use the arrow keys to select and press Enter. You'll only be asked once per folder.</p>
+          <strong data-en="Choose whether to share this folder" data-ja="フォルダを共有するか選択">Choose whether to share this folder</strong>
+          <p data-en="A consent dialog will appear before Claude starts. Use the arrow keys to select and press Enter. You'll only be asked once per folder." data-ja="Claudeの起動前に同意ダイアログが表示されます。矢印キーで選択してEnterキーを押してください。各フォルダにつき一度だけ確認されます。">A consent dialog will appear before Claude starts. Use the arrow keys to select and press Enter. You'll only be asked once per folder.</p>
           <div class="code-block">
             <span class="output">────────────────────────────────────────────────────</span><br>
             <span class="output">Agent Logging Consent</span><br>
@@ -121,18 +121,18 @@
           </div>
         </li>
         <li>
-          <strong>Use Claude Code as normal</strong>
-          <p>Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. <strong>You can ask Claude to change the share status of your project anytime.</strong></p>
+          <strong data-en="Use Claude Code as normal" data-ja="通常通りClaude Codeを使用">Use Claude Code as normal</strong>
+          <p data-en="Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. You can ask Claude to change the share status of your project anytime." data-ja="セッションログはバックグラウンドで自動的に同期されます。Claudeの下部にあるステータスラインに現在の共有状態が表示されます。いつでもClaudeにプロジェクトの共有状態の変更を依頼できます。">Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. <strong>You can ask Claude to change the share status of your project anytime.</strong></p>
         </li>
         <li>
-          <strong>Complete participant surveys</strong>
-          <p>Visit the <a href="portal.html">Participant Portal</a> to manage your consent settings and complete the participant survey.</p>
+          <strong data-en="Complete participant surveys" data-ja="参加者アンケートに回答">Complete participant surveys</strong>
+          <p data-en="Visit the Participant Portal to manage your consent settings and complete the participant survey." data-ja="参加者ポータルで同意設定を管理し、参加者アンケートに回答してください。">Visit the <a href="portal.html">Participant Portal</a> to manage your consent settings and complete the participant survey.</p>
         </li>
       </ol>
 
       <div class="info-box">
-        <strong>What gets shared?</strong>
-        <p style="margin-bottom:0">Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are <strong>never</strong> shared — they are stripped before leaving your machine.</p>
+        <strong data-en="What gets shared?" data-ja="何が共有されますか？">What gets shared?</strong>
+        <p style="margin-bottom:0" data-en="Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are never shared — they are stripped before leaving your machine." data-ja="あなたのプロンプト、Claudeの応答、およびツール呼び出し名が共有されます。ツール結果のファイル内容やファイルスナップショットは共有されません — お使いのマシンから送信される前に除去されます。">Your prompts, Claude's responses, and tool call names. File contents from tool results and file snapshots are <strong>never</strong> shared — they are stripped before leaving your machine.</p>
       </div>
     </div>
   </section>
@@ -140,8 +140,8 @@
   <!-- Uninstall -->
   <section class="section" id="uninstall">
     <div class="container">
-      <h2>Uninstalling</h2>
-      <p>To remove agent-logs completely:</p>
+      <h2 data-en="Uninstalling" data-ja="アンインストール">Uninstalling</h2>
+      <p data-en="To remove agent-logs completely:" data-ja="agent-logsを完全に削除するには：">To remove agent-logs completely:</p>
       <div class="code-block">
         <span class="command">agent-logs uninstall</span><br>
         <span class="command">source ~/.bashrc</span> <span class="comment"># or ~/.zshrc</span>
