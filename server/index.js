@@ -929,6 +929,30 @@ app.post("/portal/revoke", async (req, res) => {
       params: { ...params, revoked },
     });
 
+    // Cascade to research.logs
+    if (SEALED_MAPPING_KEY) {
+      try {
+        const docId = hashEmail(email);
+        const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
+        if (sealedDoc.exists) {
+          const { anon_id } = unsealMapping(sealedDoc.data());
+          const projectHash = createHash("sha256").update(project_path).digest("hex");
+          const researchWhere = session_id
+            ? `anon_id = @anon_id AND project_hash = @project_hash AND session_id = @session_id`
+            : `anon_id = @anon_id AND project_hash = @project_hash`;
+          const researchParams = { anon_id, project_hash: projectHash };
+          if (session_id) researchParams.session_id = session_id;
+
+          await bigquery.query({
+            query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = @revoked WHERE ${researchWhere}`,
+            params: { ...researchParams, revoked },
+          });
+        }
+      } catch (err) {
+        console.error("Research revoke cascade failed:", err.message);
+      }
+    }
+
     res.json({ status: "ok", revoked });
   } catch (err) {
     console.error("Revoke error:", err);

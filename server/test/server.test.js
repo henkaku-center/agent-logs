@@ -1,6 +1,7 @@
 import { describe, it, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import jwt from "jsonwebtoken";
+import { createHash, createCipheriv, randomBytes } from "crypto";
 
 // ── Mock GCP services before importing server ──
 
@@ -85,6 +86,7 @@ const mockFirestore = {
 };
 
 // Mock BigQuery
+const bigqueryQueries = [];
 const mockBigQuery = {
   dataset: () => ({
     table: (name) => ({
@@ -95,6 +97,7 @@ const mockBigQuery = {
     }),
   }),
   query: async ({ query, params }) => {
+    bigqueryQueries.push({ query, params });
     return [bigqueryQueryResults];
   },
 };
@@ -166,6 +169,7 @@ beforeEach(() => {
   for (const key of Object.keys(firestoreData)) delete firestoreData[key];
   bigqueryRows.length = 0;
   researchRows.length = 0;
+  bigqueryQueries.length = 0;
   bigqueryQueryResults = [];
   resetSurveyCache();
 });
@@ -964,6 +968,43 @@ describe("POST /portal/revoke", () => {
       method: "POST", body: { project_path: "/test", revoked: true },
     });
     assert.equal(status, 401);
+  });
+
+  it("cascades revoke to research.logs via sealed mapping", async () => {
+    const email = "cascade@chibatech.dev";
+    const token = makeToken(email);
+    const anonId = "anon-uuid-1234";
+
+    // Create sealed mapping for this email
+    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
+    const plaintext = JSON.stringify({ email, anon_id: anonId });
+    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const emailHash = createHash("sha256").update(email).digest("hex");
+    firestoreData[`sealed_mapping/${emailHash}`] = {
+      iv: iv.toString("hex"),
+      ciphertext: ciphertext.toString("hex"),
+      tag: cipher.getAuthTag().toString("hex"),
+    };
+
+    bigqueryQueries.length = 0;
+    const { status, data } = await req("/portal/revoke", {
+      method: "POST", token,
+      body: { project_path: "/home/student/project", session_id: "sess-1", revoked: true },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.revoked, true);
+
+    // Should have two UPDATE queries: one for course.logs, one for research.logs
+    assert.equal(bigqueryQueries.length, 2);
+    assert.ok(bigqueryQueries[0].query.includes("course.logs"));
+    assert.ok(bigqueryQueries[1].query.includes("research_logs"));
+    assert.equal(bigqueryQueries[1].params.anon_id, anonId);
+    assert.equal(bigqueryQueries[1].params.revoked, true);
+    // project_hash should be sha256 of project_path
+    const expectedHash = createHash("sha256").update("/home/student/project").digest("hex");
+    assert.equal(bigqueryQueries[1].params.project_hash, expectedHash);
   });
 });
 
