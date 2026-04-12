@@ -820,15 +820,13 @@ Reports are served through the web portal, authenticated with the student's Goog
 
 Single web application serving both students and researchers.
 
-### Student view
+### Student view (portal tabs)
 
-- **My projects**: list of shared and withdrawn projects, consent status for each (read-only — project consent is managed via CLI)
-- **My sessions**: browse synced sessions by project, with timestamps and summary stats (message count, duration, tokens)
-- **Personal Insights**: view/download Personal Insights report — session patterns, tool usage, trends over time. Available to all students who share at least one project.
-- **Cohort Insights** (Research-use only): view/download Cohort Insights report — the student's patterns placed in context of the cohort distribution across courses. This is the primary incentive for Research-use participation: context that no individual student could derive alone.
-- **Delete requests**: submit new requests, view status of pending requests
-- **Study consent**: Research-use opt-in/opt-out, global withdrawal
-- **Sync status**: last sync time, pending data, hook health
+- **Consent** (default tab): informed consent form (sections 1–11), Educational-use toggle (locked after signing), Research-use toggle (can be changed anytime), sign and export PDF. Consent form must be signed before Claude will launch.
+- **Survey**: pre-course, mid-course, and post-course questionnaires with save/submit/sign/export
+- **Logs**: browse synced session logs grouped by project, with timestamps, summary stats (prompts, responses), and withdraw/restore toggle per session
+- **Insights**: overview of shared projects, sessions synced, consent status, survey progress. Future: Personal Insights report (all students) and Cohort Insights report (Research-use only)
+- **Delete requests**: submit new requests, view status of pending requests (via Logs tab)
 
 ### Researcher view
 

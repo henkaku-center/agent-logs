@@ -4,14 +4,17 @@ Session log collection for Claude Code. Syncs participant coding sessions to Big
 
 ## Architecture
 
-Participants install a CLI (`agent-logs`) that registers hooks in Claude Code and wraps the `claude` command with a consent dialog. On each turn, hooks sync filtered JSONL session lines to a Cloud Run ingestion service. Record-type filtering and `tool_result` stripping happen client-side before upload. The server deduplicates via a Firestore offset ledger and writes to BigQuery.
+Participants install a CLI (`agent-logs`) that registers hooks in Claude Code and wraps the `claude` command with a consent dialog. Before launching Claude, the wrapper checks that the participant has signed the informed consent form on the web portal. On each turn, hooks sync filtered JSONL session lines to a Cloud Run ingestion service. Record-type filtering and `tool_result` stripping happen client-side before upload. The server deduplicates via a Firestore offset ledger and writes to BigQuery.
 
 At login, each participant receives a **research token** — a signed JWT containing a random anonymous identifier. The email-to-anon_id mapping is stored encrypted (AES-256-GCM) in Firestore. The server never stores this link in plaintext.
 
 ```
 claude (shell wrapper)
   │
-  ├─▶ agent-logs consent-dialog  (interactive Y/N per folder)
+  ├─▶ agent-logs consent-dialog
+  │     1. Login (email verification code → JWT + research token)
+  │     2. Check consent form signed (cached locally after first check)
+  │     3. Per-folder consent prompt (interactive Y/N)
   │
   └─▶ Claude Code
         │ hooks: Stop / SubagentStop / SessionEnd
@@ -28,7 +31,7 @@ claude (shell wrapper)
 |-----------|-------------|
 | `cli/` | Participant-side CLI — login, sync, consent-dialog, consent-status, withdraw, doctor |
 | `server/` | Cloud Run ingestion service — auth, dedup, BigQuery writes, portal API, research token issuance |
-| `docs/` | GitHub Pages site — install guide, participant portal (consent, surveys, sessions) |
+| `docs/` | GitHub Pages site — install guide, participant portal (consent, surveys, logs, insights) |
 | `context/` | Meeting notes, IRB ethics documents, system design plan |
 
 ## Participant setup
@@ -36,7 +39,7 @@ claude (shell wrapper)
 ```bash
 curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash
 source ~/.bashrc   # or ~/.zshrc
-claude             # auto-login + consent dialog + Claude Code
+claude             # login → sign consent form → folder consent → Claude Code
 ```
 
 ## CLI commands
@@ -55,11 +58,10 @@ agent-logs uninstall        # remove hooks, config, wrapper, and CLI
 
 The web portal at [agent-logs.chibatech.dev/portal.html](https://agent-logs.chibatech.dev/portal.html) provides:
 
-- **Dashboard** — overview of shared projects, sessions, consent status, survey progress
-- **Consent** — toggle Research-use consent (Educational-use is course-mandatory)
+- **Consent** (default tab) — informed consent form with Educational-use and Research-use toggles, sign and export PDF
 - **Survey** — pre-course, mid-course, and post-course questionnaires
-- **Sessions** — view synced session logs grouped by project, with revoke/restore toggle
-- **Delete requests** — request deletion of specific project or session data
+- **Logs** — synced session logs grouped by project, with withdraw/restore toggle
+- **Insights** — overview of shared projects, sessions, consent status, survey progress
 
 ## GCP resources
 
@@ -67,13 +69,14 @@ All infrastructure runs in the `agent-logging` project (asia-northeast1):
 
 - **Cloud Run** — `agent-logs-ingestion` (scales to zero)
 - **BigQuery** — `course.logs` (identified session logs), `cowork_events` (OTLP telemetry)
-- **Firestore** — `offsets/` (dedup), `consent/` (research-use state), `sealed_mapping/` (encrypted identity mapping), `survey_responses/`, `allowlist/` (auth), `delete_requests/`, `session_titles/`
+- **Firestore** — `offsets/` (dedup), `consent/` (research-use state, signed_at), `sealed_mapping/` (encrypted identity mapping), `survey_responses/`, `allowlist/` (auth), `delete_requests/`, `session_titles/`, `auth_codes/` (temporary verification codes)
 
 ## Identity and privacy
 
 - **Auth**: email magic code verification → JWT (90-day expiry) + research token (no expiry, reissued on login)
 - **Research token**: signed JWT `{anon_id, type: "research"}` stored at `~/.config/agent-logs/token.json`
 - **Sealed mapping**: `sealed_mapping/{sha256(email)}` in Firestore — AES-256-GCM encrypted `{email, anon_id}`, decryptable only by the ingestion service via `SEALED_MAPPING_KEY` env var
+- **Consent**: Educational-use locked after signing; Research-use can be changed anytime
 - **Retention**: sealed mapping key destroyed 1 month post-course → mapping becomes irrecoverable
 
 ## What gets synced
