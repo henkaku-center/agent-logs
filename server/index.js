@@ -26,8 +26,10 @@ const firestore = new Firestore();
 const PROJECT_ID = process.env.GCP_PROJECT || "agent-logging";
 const DATASET = "course";
 const TABLE = "logs";
+const COWORK_TABLE = "cowork_events";
 const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production";
 const GMAIL_SENDER = process.env.GMAIL_SENDER || "claude@chibatech.dev";
+const OTLP_SECRET = process.env.OTLP_SECRET || "change-me-otlp-secret";
 
 /** Admin emails that can manage the allowlist */
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "grisha@henkaku.center,contact@gszep.com")
@@ -767,6 +769,94 @@ app.get("/portal/delete-requests", async (req, res) => {
   }));
 
   res.json({ requests });
+});
+
+/* ── OTLP ingestion (Cowork telemetry) ── */
+// Accepts OTLP HTTP/JSON from Claude Cowork.
+// Future: Compliance API will be another data source once Enterprise upgrade completes.
+
+/**
+ * POST /v1/traces — OTLP HTTP/JSON endpoint
+ * Receives OpenTelemetry span data from Claude Cowork.
+ * Auth via Bearer token in OTLP headers (shared secret).
+ */
+app.post("/v1/traces", async (req, res) => {
+  // Validate OTLP auth
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${OTLP_SECRET}`) {
+    return res.status(401).json({ error: "Invalid OTLP authorization" });
+  }
+
+  try {
+    const { resourceSpans } = req.body;
+    if (!resourceSpans || !Array.isArray(resourceSpans)) {
+      return res.status(400).json({ error: "Invalid OTLP payload" });
+    }
+
+    const rows = [];
+
+    for (const rs of resourceSpans) {
+      // Extract resource attributes (org, user)
+      const resourceAttrs = {};
+      for (const attr of rs.resource?.attributes || []) {
+        resourceAttrs[attr.key] = attr.value?.stringValue || attr.value?.intValue || "";
+      }
+
+      for (const scopeSpan of rs.scopeSpans || []) {
+        for (const span of scopeSpan.spans || []) {
+          // Extract span attributes
+          const attrs = {};
+          for (const attr of span.attributes || []) {
+            attrs[attr.key] = attr.value?.stringValue || attr.value?.intValue || "";
+          }
+
+          // Map OTel events to our schema
+          for (const event of span.events || []) {
+            const eventAttrs = {};
+            for (const attr of event.attributes || []) {
+              eventAttrs[attr.key] = attr.value?.stringValue || attr.value?.intValue || "";
+            }
+
+            rows.push({
+              user_email: resourceAttrs["user.email"] || attrs["user.email"] || "",
+              organization_id: resourceAttrs["organization.id"] || attrs["organization.id"] || "",
+              session_id: attrs["session.id"] || span.traceId || "",
+              prompt_id: attrs["prompt.id"] || eventAttrs["prompt.id"] || "",
+              event_type: event.name || "unknown",
+              timestamp: event.timeUnixNano
+                ? new Date(Number(BigInt(event.timeUnixNano) / 1000000n)).toISOString()
+                : new Date().toISOString(),
+              data: JSON.stringify({ span_attrs: attrs, event_attrs: eventAttrs }),
+            });
+          }
+
+          // If no events, store the span itself
+          if (!span.events || span.events.length === 0) {
+            rows.push({
+              user_email: resourceAttrs["user.email"] || attrs["user.email"] || "",
+              organization_id: resourceAttrs["organization.id"] || attrs["organization.id"] || "",
+              session_id: attrs["session.id"] || span.traceId || "",
+              prompt_id: attrs["prompt.id"] || "",
+              event_type: span.name || "span",
+              timestamp: span.startTimeUnixNano
+                ? new Date(Number(BigInt(span.startTimeUnixNano) / 1000000n)).toISOString()
+                : new Date().toISOString(),
+              data: JSON.stringify({ span_attrs: attrs }),
+            });
+          }
+        }
+      }
+    }
+
+    if (rows.length > 0) {
+      await bigquery.dataset(DATASET).table(COWORK_TABLE).insert(rows);
+    }
+
+    res.json({ partialSuccess: {} });
+  } catch (err) {
+    console.error("OTLP ingestion error:", err);
+    res.status(500).json({ error: "Failed to ingest telemetry" });
+  }
 });
 
 /** Health check */

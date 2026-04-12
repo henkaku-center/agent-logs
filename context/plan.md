@@ -851,3 +851,14 @@ Harden the system for production use with real student data.
 5. Consent form signing — PDF generation, researcher archive, late opt-in mechanics
 6. Delete request processing — review workflow, deletion from both BigQuery datasets (`DELETE FROM ... WHERE anon_id = ?`), audit trail. Available within withdrawal window only.
 7. Revoked-row cleanup — permanent deletion of rows still flagged `revoked = true` at 1 month post-course
+
+## Data Sources
+
+### Claude Code (active)
+Session logs collected via CLI hooks → BigQuery `course.logs`. Client-side filtering strips `tool_result` content.
+
+### Claude Cowork (active)
+OpenTelemetry events via OTLP HTTP/JSON → BigQuery `course.cowork_events`. Captures: `user_prompt`, `tool_result`, `api_request`, `api_error`, `tool_decision`. Configured in Claude Enterprise admin settings.
+
+### Compliance API (planned)
+Full conversation content from claude.ai via Anthropic's Compliance API. Available once Enterprise upgrade completes. Will provide inputs/outputs filterable by user and time range. Integration with existing BigQuery pipeline TBD.
