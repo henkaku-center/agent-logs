@@ -18,8 +18,8 @@
       </div>
       <div class="header-right">
         <nav>
-          <a href="index.html" class="nav-active">Documentation</a>
-          <a href="portal.html">Portal</a>
+          <a href="index.html" class="nav-active" data-en="Documentation" data-ja="ドキュメント">Documentation</a>
+          <a href="portal.html" data-en="Portal" data-ja="ポータル">Portal</a>
         </nav>
         <button class="lang-toggle" id="lang-toggle" onclick="(function(){var l=localStorage.getItem('agent_logs_lang')==='ja'?'en':'ja';localStorage.setItem('agent_logs_lang',l);location.reload()})()">日本語</button>
       </div>
@@ -36,6 +36,12 @@
         } else { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
       } catch { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
     } else { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
+    // Apply language
+    const lang = localStorage.getItem("agent_logs_lang") || (navigator.language?.startsWith("ja") ? "ja" : "en");
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-en][data-ja]").forEach(el => { el.textContent = el.dataset[lang]; });
+    const lb = document.getElementById("lang-toggle");
+    if (lb) lb.textContent = lang === "en" ? "日本語" : "English";
   </script>
 
   <!-- Hero -->
