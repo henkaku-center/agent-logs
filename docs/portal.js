@@ -461,7 +461,7 @@ async function loadConsent() {
       document.getElementById("consent-sign-btn").addEventListener("click", () => {
         const eduChecked = document.getElementById("educational-toggle").checked;
         if (!eduChecked) {
-          alert("You must agree to Educational-use before signing the consent form.");
+          alert("You must agree to Educational-use before signing the consent form. Research-use is optional and can be changed anytime.");
           return;
         }
         showSignModal("Sign Informed Consent", async () => {
