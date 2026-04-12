@@ -411,15 +411,19 @@ async function loadConsent() {
         <button class="btn btn-secondary" id="consent-export-pdf" style="margin-top:12px">Export PDF</button>
       `;
       document.getElementById("consent-export-pdf").addEventListener("click", () => {
-        exportPDF("Consent Form — Agent Logs", `
+        const formEl = document.getElementById("consent-form-content");
+        const formHtml = formEl ? formEl.innerHTML : "";
+        exportPDF("Informed Consent — Agent Logs", `
           <h2>Consent Preferences</h2>
           <table>
-            <tr><th>Educational-use</th><td>✓ Enabled</td></tr>
+            <tr><th>Educational-use</th><td>✓ Enabled (course requirement)</td></tr>
             <tr><th>Research-use</th><td>${data.research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
           </table>
           <div class="signature">
             <p class="check">✓ Signed by participant on ${new Date(data.signed_at).toLocaleString()}</p>
           </div>
+          <hr style="margin:32px 0">
+          ${formHtml}
         `);
       });
     } else {
@@ -440,7 +444,10 @@ async function loadConsent() {
       });
 
       signArea.innerHTML = `
-        <button class="btn btn-primary" id="consent-sign-btn" style="margin-top:24px">Sign consent form</button>
+        <div class="info-box" style="margin-top:24px">
+          <p style="margin-bottom:0">I have read and understood the above information. I understand that my participation is voluntary, that I may withdraw at any time during the course and up to one month after the end of classes, and that my decision has no effect on my grades or course experience.</p>
+        </div>
+        <button class="btn btn-primary" id="consent-sign-btn" style="margin-top:12px">Sign consent form</button>
       `;
       document.getElementById("consent-sign-btn").addEventListener("click", () => {
         showSignModal("Sign Consent Form", async () => {

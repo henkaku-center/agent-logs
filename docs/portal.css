@@ -66,6 +66,38 @@
   font-size: 14px;
 }
 
+/* Consent document */
+.consent-document {
+  margin: 24px 0;
+  padding: 32px;
+  border: 1px solid #E0E0E0;
+  max-height: 600px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.consent-document h3 {
+  text-align: center;
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.consent-document h4 {
+  font-size: 15px;
+  margin: 28px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #E0E0E0;
+}
+.consent-document ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.consent-document li {
+  margin-bottom: 8px;
+}
+.consent-document p {
+  margin: 8px 0;
+}
+
 /* Consent toggle */
 .consent-toggle-box {
   display: flex;
