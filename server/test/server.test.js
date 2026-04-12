@@ -546,10 +546,17 @@ describe("POST /portal/consent/sign", () => {
     assert.equal(status, 403);
   });
 
-  it("rejects signing without consent record", async () => {
+  it("creates consent record on sign if none exists", async () => {
     const token = makeToken("student@chibatech.dev");
-    const { status } = await req("/portal/consent/sign", { method: "POST", token, body: {} });
-    assert.equal(status, 400);
+    const { status, data } = await req("/portal/consent/sign", {
+      method: "POST", token,
+      body: { consent_html: "<p>form</p>", research_use: true },
+    });
+    assert.equal(status, 200);
+    assert.ok(data.signed_at);
+    const stored = firestoreData["consent/student@chibatech.dev"];
+    assert.equal(stored.research_use, true);
+    assert.ok(stored.consented_at);
   });
 });
 

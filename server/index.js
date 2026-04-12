@@ -751,10 +751,7 @@ app.post("/portal/consent/sign", async (req, res) => {
 
   const ref = firestore.doc(`consent/${email}`);
   const doc = await ref.get();
-  if (!doc.exists) {
-    return res.status(400).json({ error: "No consent record found. Set your consent preference first." });
-  }
-  const existing = doc.data();
+  const existing = doc.exists ? doc.data() : {};
   if (existing.signed_at) {
     return res.status(403).json({ error: "Consent form already signed." });
   }
@@ -798,7 +795,14 @@ app.post("/portal/consent/sign", async (req, res) => {
 
   const consent_pdf = Buffer.from(archiveHtml, "utf8").toString("base64");
 
-  await ref.update({ signed_at: signedAt, signed_by: email, consent_pdf });
+  await ref.set({
+    ...existing,
+    research_use: research_use ?? existing.research_use ?? false,
+    signed_at: signedAt,
+    signed_by: email,
+    consent_pdf,
+    ...(!existing.consented_at && { consented_at: signedAt }),
+  }, { merge: true });
   res.json({ status: "ok", signed_at: signedAt.toISOString() });
 });
 
