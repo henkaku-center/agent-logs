@@ -731,7 +731,7 @@ function renderSurveyForm(surveyId, responses) {
           <div class="question-text">${num}. ${qText}</div>
           <div class="radio-group">
             ${q.options.map((opt) => `
-              <label><input type="radio" name="${q.id}" value="${opt}" ${responses[q.id] === opt ? "checked" : ""}> ${opt}</label>
+              <label><input type="radio" name="${q.id}" value="${opt}" ${responses[q.id] === opt ? "checked" : ""}> ${localizeText(opt)}</label>
             `).join("")}
           </div>
         </div>`;
@@ -766,14 +766,14 @@ function renderSurveyForm(surveyId, responses) {
           <p style="margin:12px 0 4px">${t("B. Explain your reasoning (1-2 sentences)", "B. 理由を説明してください（1〜2文）")}</p>
           <textarea class="survey-text" name="${q.id}_b" rows="2">${responses[q.id + "_b"] || ""}</textarea>
           <p style="margin:12px 0 4px">${t("C. Which tool would you use?", "C. どのツールを使いますか？")}</p>
-          <input class="form-input" name="${q.id}_c" value="${responses[q.id + "_c"] || ""}" placeholder="e.g., Claude Code, ChatGPT, none...">
+          <input class="form-input" name="${q.id}_c" value="${responses[q.id + "_c"] || ""}" placeholder="${t("e.g., Claude Code, ChatGPT, none...", "例：Claude Code、ChatGPT、なし...")}">
         </div>`;
       }
 
       if (q.type === "text") {
         return `<div class="survey-question">
           <div class="question-text">${num}. ${qText}</div>
-          <input class="form-input" name="${q.id}" value="${responses[q.id] || ""}" placeholder="${q.placeholder || ""}">
+          <input class="form-input" name="${q.id}" value="${responses[q.id] || ""}" placeholder="${localizeText(q.placeholder) || ""}">
         </div>`;
       }
 
@@ -790,7 +790,7 @@ function renderSurveyForm(surveyId, responses) {
           <div class="question-text">${num}. ${qText}</div>
           <div class="radio-group">
             ${q.options.map((opt) => `
-              <label><input type="checkbox" name="${q.id}" value="${opt}" ${selected.includes(opt) ? "checked" : ""}> ${opt}</label>
+              <label><input type="checkbox" name="${q.id}" value="${opt}" ${selected.includes(opt) ? "checked" : ""}> ${localizeText(opt)}</label>
             `).join("")}
           </div>
         </div>`;

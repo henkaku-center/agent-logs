@@ -5,29 +5,29 @@
 const SURVEYS = {
   pre_course: {
     title: "Pre-Course Survey / 事前調査",
-    description: "This survey helps us understand your background and experience with AI tools. Your responses are confidential. It takes approximately 25-30 minutes.",
+    description: "This survey helps us understand your background and experience with AI tools. Your responses are confidential. It takes approximately 25-30 minutes. / このアンケートは、あなたの背景とAIツールの経験を理解するためのものです。回答は機密として扱われます。所要時間は約25〜30分です。",
     sections: [
       {
         id: "A0",
         title: "Background Information / 基本情報",
-        description: "Please tell us about yourself.",
+        description: "Please tell us about yourself. / あなた自身について教えてください。",
         phase: ["pre_course"],
         questions: [
-          { id: "A0_1", text: "Age range / 年齢層", type: "radio", options: ["18-22", "23-29", "30-39", "40 or older", "Prefer not to answer"] },
-          { id: "A0_2", text: "Gender / 性別", type: "radio", options: ["Male", "Female", "Non-binary", "Other", "Prefer not to answer"] },
-          { id: "A0_3", text: "Education level currently pursuing / 現在在籍中の課程", type: "radio", options: ["Undergraduate", "Master's program", "Doctoral program", "Other"] },
-          { id: "A0_4", text: "Primary language used in daily life / 日常生活で主に使用する言語", type: "radio", options: ["Japanese", "English", "Chinese", "Other"] },
-          { id: "A0_5", text: "Japanese language proficiency / 日本語能力", type: "radio", options: ["Elementary (JLPT N5-N4)", "Intermediate (JLPT N3)", "Advanced (JLPT N2-N1)", "Native", "Prefer not to answer"] },
-          { id: "A0_6", text: "Approximate years of programming experience / プログラミング経験年数", type: "radio", options: ["None", "Less than 1 year", "1-3 years", "3+ years"] },
-          { id: "A0_7", text: "Years of professional work experience / 職務経験年数", type: "radio", options: ["Not applicable", "Less than 3 years", "3-10 years", "10+ years"] },
+          { id: "A0_1", text: "Age range / 年齢層", type: "radio", options: ["18-22", "23-29", "30-39", "40 or older / 40歳以上", "Prefer not to answer / 回答しない"] },
+          { id: "A0_2", text: "Gender / 性別", type: "radio", options: ["Male / 男性", "Female / 女性", "Non-binary / ノンバイナリー", "Other / その他", "Prefer not to answer / 回答しない"] },
+          { id: "A0_3", text: "Education level currently pursuing / 現在在籍中の課程", type: "radio", options: ["Undergraduate / 学部", "Master's program / 修士課程", "Doctoral program / 博士課程", "Other / その他"] },
+          { id: "A0_4", text: "Primary language used in daily life / 日常生活で主に使用する言語", type: "radio", options: ["Japanese / 日本語", "English / 英語", "Chinese / 中国語", "Other / その他"] },
+          { id: "A0_5", text: "Japanese language proficiency / 日本語能力", type: "radio", options: ["Elementary (JLPT N5-N4) / 初級（JLPT N5-N4）", "Intermediate (JLPT N3) / 中級（JLPT N3）", "Advanced (JLPT N2-N1) / 上級（JLPT N2-N1）", "Native / 母語", "Prefer not to answer / 回答しない"] },
+          { id: "A0_6", text: "Approximate years of programming experience / プログラミング経験年数", type: "radio", options: ["None / なし", "Less than 1 year / 1年未満", "1-3 years / 1〜3年", "3+ years / 3年以上"] },
+          { id: "A0_7", text: "Years of professional work experience / 職務経験年数", type: "radio", options: ["Not applicable / 該当なし", "Less than 3 years / 3年未満", "3-10 years / 3〜10年", "10+ years / 10年以上"] },
         ],
       },
       {
         id: "A1",
         title: "AI Tool Familiarity / AIツール習熟度",
-        description: "Rate your familiarity with each type of AI tool.",
+        description: "Rate your familiarity with each type of AI tool. / 各AIツールの習熟度を評価してください。",
         phase: ["pre_course", "post_course"],
-        scale: { min: 1, max: 7, minLabel: "No experience at all", maxLabel: "Frequently used and comfortable" },
+        scale: { min: 1, max: 7, minLabel: "No experience at all / 全く経験がない", maxLabel: "Frequently used and comfortable / 頻繁に使用し慣れている" },
         questions: [
           { id: "A1_1", text: "Code completion tools (GitHub Copilot, IDE inline suggestions) / コード補完ツール", type: "likert" },
           { id: "A1_2", text: "Conversational AI assistants (ChatGPT, Claude web) / 対話型AIアシスタント", type: "likert" },
@@ -39,7 +39,7 @@ const SURVEYS = {
       {
         id: "A2",
         title: "Task Delegation Judgment / タスク委任判断",
-        description: "For each scenario, rate how appropriate it is for AI, explain your reasoning, and choose which tool you would use.",
+        description: "For each scenario, rate how appropriate it is for AI, explain your reasoning, and choose which tool you would use. / 各シナリオについて、AIにどの程度適しているかを評価し、理由を説明し、使用するツールを選択してください。",
         phase: ["pre_course", "post_course"],
         questions: [
           {
@@ -63,14 +63,14 @@ const SURVEYS = {
             text: "Scenario 5: Evaluating whether AI-generated code follows security requirements correctly / シナリオ5: AI生成コードがセキュリティ要件に正しく従っているかの評価",
           },
         ],
-        vignetteScale: { min: 1, max: 7, minLabel: "Completely inappropriate for AI", maxLabel: "Perfectly suited for AI" },
+        vignetteScale: { min: 1, max: 7, minLabel: "Completely inappropriate for AI / AIに全く不適切", maxLabel: "Perfectly suited for AI / AIに最適" },
       },
       {
         id: "A3",
         title: "Self-Efficacy in Specifying Intent to AI / AIに意図を指定する自己効力感",
-        description: "Rate your agreement with each statement.",
+        description: "Rate your agreement with each statement. / 各文への同意度を評価してください。",
         phase: ["pre_course", "post_course"],
-        scale: { min: 1, max: 7, minLabel: "Strongly disagree", maxLabel: "Strongly agree" },
+        scale: { min: 1, max: 7, minLabel: "Strongly disagree / 全くそう思わない", maxLabel: "Strongly agree / とてもそう思う" },
         questions: [
           { id: "A3_1", text: "I can explain how to use an AI tool properly, and with 1-2 trial runs, get desirable results / AIツールの使い方を正しく説明でき、1-2回の試行で望ましい結果を得られる", type: "likert" },
           { id: "A3_2", text: "When an AI tool produces undesired output, I can identify what went wrong and correct it / AIツールが望ましくない出力を生成した場合、何が間違っていたかを特定し修正できる", type: "likert" },
@@ -82,9 +82,9 @@ const SURVEYS = {
       {
         id: "A4",
         title: "Metacognitive Awareness of AI Collaboration / AI協働に関するメタ認知的認識",
-        description: "Rate your agreement with each statement.",
+        description: "Rate your agreement with each statement. / 各文への同意度を評価してください。",
         phase: ["pre_course", "post_course"],
-        scale: { min: 1, max: 7, minLabel: "Strongly disagree", maxLabel: "Strongly agree" },
+        scale: { min: 1, max: 7, minLabel: "Strongly disagree / 全くそう思わない", maxLabel: "Strongly agree / とてもそう思う" },
         questions: [
           { id: "A4_1", text: "I can clearly distinguish between AI output quality and actual correctness / AIの出力品質と実際の正確さを明確に区別できる", type: "likert" },
           { id: "A4_2", text: "I evaluate whether AI completes the task fully within the allotted time / AIが割り当てられた時間内にタスクを完全に完了したかを評価する", type: "likert" },
@@ -95,9 +95,9 @@ const SURVEYS = {
       {
         id: "A5",
         title: "Metacognitive Self-Regulation / メタ認知的自己調整 (MSLQ)",
-        description: "Think about how you generally approach course work through AI support projects. Rate how much each statement applies to you.",
+        description: "Think about how you generally approach course work through AI support projects. Rate how much each statement applies to you. / AI支援プロジェクトを通じた課題への一般的なアプローチについて考えてください。各文がどの程度自分に当てはまるかを評価してください。",
         phase: ["pre_course", "post_course"],
-        scale: { min: 1, max: 7, minLabel: "Never applies", maxLabel: "Applies all the time" },
+        scale: { min: 1, max: 7, minLabel: "Never applies / 全く当てはまらない", maxLabel: "Applies all the time / 常に当てはまる" },
         questions: [
           { id: "A5_1", text: "During project work, I notice other important things that I need to accomplish / プロジェクト作業中、達成すべき他の重要なことに気づく", type: "likert", reverse: true },
           { id: "A5_2", text: "When taking on tasks each session, I set learning goals to guide my activities / 各セッションでタスクに取り組む際、活動を導く学習目標を設定する", type: "likert" },
@@ -116,7 +116,7 @@ const SURVEYS = {
       {
         id: "A_ID1",
         title: "Cognitive Reflection Test / 認知反映テスト (CRT)",
-        description: "Answer each question. Most people get these wrong on first try — take your time.",
+        description: "Answer each question. Most people get these wrong on first try — take your time. / 各質問に答えてください。ほとんどの人が最初は間違えます — じっくり考えてください。",
         phase: ["pre_course"],
         questions: [
           { id: "AID1_1", text: "A bat and ball cost $1.10 total. The bat costs $1.00 more than the ball. How much does the ball cost? / バットとボールの合計は$1.10。バットはボールより$1.00高い。ボールはいくら？", type: "text" },
@@ -131,9 +131,9 @@ const SURVEYS = {
       {
         id: "A_ID2",
         title: "Need for Cognition / 認知欲求 (NFC-18)",
-        description: "Rate how characteristic each statement is of you.",
+        description: "Rate how characteristic each statement is of you. / 各文がどの程度自分の特性に当てはまるかを評価してください。",
         phase: ["pre_course"],
-        scale: { min: 1, max: 7, minLabel: "Very uncharacteristic of me", maxLabel: "Very characteristic of me" },
+        scale: { min: 1, max: 7, minLabel: "Very uncharacteristic of me / 全く自分に当てはまらない", maxLabel: "Very characteristic of me / とても自分に当てはまる" },
         questions: [
           { id: "AID2_1", text: "I prefer simple problems to complex ones / 複雑な問題よりも単純な問題を好む", type: "likert", reverse: true },
           { id: "AID2_2", text: "I like considering many options when solving problems / 問題解決時に多くの選択肢を検討するのが好きだ", type: "likert" },
@@ -158,9 +158,9 @@ const SURVEYS = {
       {
         id: "A_ID3",
         title: "Intellectual Humility / 知的謙虚さ",
-        description: "Rate your agreement with each statement.",
+        description: "Rate your agreement with each statement. / 各文への同意度を評価してください。",
         phase: ["pre_course"],
-        scale: { min: 1, max: 7, minLabel: "Strongly disagree", maxLabel: "Strongly agree" },
+        scale: { min: 1, max: 7, minLabel: "Strongly disagree / 全くそう思わない", maxLabel: "Strongly agree / とてもそう思う" },
         questions: [
           { id: "AID3_1", text: "I might be wrong about some things; my understanding or opinions might be mistaken / 自分が間違っているかもしれない。理解や意見が誤りかもしれない", type: "likert" },
           { id: "AID3_2", text: "When new evidence contradicts my opinions, I reconsider my position / 新しい証拠が自分の意見と矛盾するとき、立場を再考する", type: "likert" },
@@ -175,12 +175,12 @@ const SURVEYS = {
 
   mid_course: {
     title: "Mid-Course Check-in / 中間チェックイン",
-    description: "Brief check-in on your AI tool usage and course progress. Takes approximately 5-6 minutes.",
+    description: "Brief check-in on your AI tool usage and course progress. Takes approximately 5-6 minutes. / AIツールの使用状況とコースの進捗についての簡単なチェックインです。所要時間は約5〜6分です。",
     sections: [
       {
         id: "B1",
         title: "AI Tool Use Impact on Course Concepts / AIツール使用がコース概念に与えた影響",
-        description: "Which course concepts have changed how you use AI tools? Select all that apply.",
+        description: "Which course concepts have changed how you use AI tools? Select all that apply. / AIツールの使い方を変えたコース概念はどれですか？該当するものをすべて選択してください。",
         phase: ["mid_course"],
         questions: [
           {
@@ -201,7 +201,7 @@ const SURVEYS = {
       {
         id: "B2",
         title: "AI Use Distribution by Project Phase / プロジェクトフェーズ別AI使用分布",
-        description: "What percentage of your AI tool use occurs at each project phase? Total must equal 100%.",
+        description: "What percentage of your AI tool use occurs at each project phase? Total must equal 100%. / 各プロジェクトフェーズでのAIツール使用の割合は？合計は100%にしてください。",
         phase: ["mid_course"],
         questions: [
           {
@@ -220,7 +220,7 @@ const SURVEYS = {
       {
         id: "B3",
         title: "Free-form Reflection / 自由形式の振り返り",
-        description: "Reflect briefly on your experience.",
+        description: "Reflect briefly on your experience. / あなたの経験について簡単に振り返ってください。",
         phase: ["mid_course"],
         questions: [
           { id: "B3_1", text: "What is one thing AI helped you recognize that you hadn't expected beforehand? / AIが事前に予想していなかった気づきを与えてくれたことは何ですか？", type: "textarea" },
@@ -232,7 +232,7 @@ const SURVEYS = {
 
   post_course: {
     title: "Post-Course Survey / 事後調査",
-    description: "Final survey measuring changes in your AI collaboration skills. Takes approximately 25-30 minutes. Sections A1-A5 are repeated from the pre-study survey.",
+    description: "Final survey measuring changes in your AI collaboration skills. Takes approximately 25-30 minutes. Sections A1-A5 are repeated from the pre-study survey. / AI協働スキルの変化を測定する最終アンケートです。所要時間は約25〜30分です。セクションA1-A5は事前アンケートの繰り返しです。",
     sections: [], // Uses sections A1-A5 from pre_course (filtered by phase)
   },
 };
