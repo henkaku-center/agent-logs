@@ -498,7 +498,7 @@ let _surveyConfigExpiry = 0;
 async function getUnlockedSurveys() {
   if (Date.now() < _surveyConfigExpiry) return _surveyConfigCache;
   const doc = await firestore.doc("survey_config/current").get();
-  _surveyConfigCache = doc.exists ? doc.data().unlocked || [] : ["pre_study"];
+  _surveyConfigCache = doc.exists ? doc.data().unlocked || [] : ["pre_course"];
   _surveyConfigExpiry = Date.now() + 60_000;
   return _surveyConfigCache;
 }
@@ -623,7 +623,7 @@ app.get("/portal/survey", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
 
-  const surveyIds = ["pre_study", "mid_semester", "post_study"];
+  const surveyIds = ["pre_course", "mid_course", "post_course"];
   const unlocked = await getUnlockedSurveys();
 
   // Fetch all responses in parallel (single batched read)

@@ -258,7 +258,7 @@ async function loadDashboard() {
     const totalSessions = sessionsData.projects.reduce(
       (sum, p) => sum + p.sessions.length, 0
     );
-    const preStudy = surveyData.surveys.pre_study;
+    const preStudy = surveyData.surveys.pre_course;
 
     container.innerHTML = `
       <div class="status-card">
@@ -453,10 +453,10 @@ async function loadSurvey() {
 
   try {
     const data = await apiFetch("/portal/survey");
-    const preStudy = data.surveys.pre_study;
+    const preStudy = data.surveys.pre_course;
 
-    const surveyOrder = ["pre_study", "mid_semester", "post_study"];
-    const labels = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" };
+    const surveyOrder = ["pre_course", "mid_course", "post_course"];
+    const labels = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" };
 
     // Determine which survey to show the form for
     // Priority: URL hash > first editable (not signed, not locked)
@@ -564,9 +564,9 @@ function validateSurvey(surveyId) {
   if (!survey) return [];
 
   let sections = survey.sections;
-  if (surveyId === "post_study") {
-    sections = window.SURVEYS.pre_study.sections.filter(
-      (s) => s.phase.includes("post_study")
+  if (surveyId === "post_course") {
+    sections = window.SURVEYS.pre_course.sections.filter(
+      (s) => s.phase.includes("post_course")
     );
   }
 
@@ -602,7 +602,7 @@ async function saveSurvey(completed) {
   const form = document.getElementById("survey-form");
   if (!form) return;
 
-  const surveyId = form.dataset.surveyId || "pre_study";
+  const surveyId = form.dataset.surveyId || "pre_course";
   const responses = collectSurveyResponses();
 
   if (completed) {
@@ -636,10 +636,10 @@ function renderSurveyForm(surveyId, responses) {
 
   let sections = survey.sections;
 
-  // Post-study reuses A1-A5 from pre_study
-  if (surveyId === "post_study") {
-    sections = window.SURVEYS.pre_study.sections.filter(
-      (s) => s.phase.includes("post_study")
+  // Post-course reuses A1-A5 from pre_course
+  if (surveyId === "post_course") {
+    sections = window.SURVEYS.pre_course.sections.filter(
+      (s) => s.phase.includes("post_course")
     );
   }
 
@@ -769,7 +769,7 @@ window.openSurvey = function(surveyId) {
 
 // Global handlers for survey sign/export (called from onclick in rendered HTML)
 window.signSurvey = function(surveyId) {
-  const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[surveyId];
+  const label = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" }[surveyId];
   showSignModal(`Sign ${label} Survey`, async () => {
     await apiFetch("/portal/survey/sign", { method: "POST", body: { survey_id: surveyId } });
     loadSurvey();
@@ -777,7 +777,7 @@ window.signSurvey = function(surveyId) {
 };
 
 window.exportSurveyPDF = async function(surveyId) {
-  const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[surveyId];
+  const label = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" }[surveyId];
   try {
     const data = await apiFetch("/portal/survey");
     const survey = data.surveys[surveyId];
@@ -786,8 +786,8 @@ window.exportSurveyPDF = async function(surveyId) {
     const responses = survey.responses;
     const surveyDef = window.SURVEYS?.[surveyId];
     let sections = surveyDef?.sections || [];
-    if (surveyId === "post_study") {
-      sections = window.SURVEYS.pre_study.sections.filter((s) => s.phase.includes("post_study"));
+    if (surveyId === "post_course") {
+      sections = window.SURVEYS.pre_course.sections.filter((s) => s.phase.includes("post_course"));
     }
 
     // Build HTML with questions and answers
