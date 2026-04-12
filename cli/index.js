@@ -329,7 +329,7 @@ switch (command) {
 
       console.log(`${cyanBold("Agent Logs")} sharing for: ${eduLabel} ${resLabel}`);
       console.log("");
-      console.log(`Visit \x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m to review consent settings`);
+      console.log(`Visit \x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m or ask Claude to review consent and data`);
       console.log(`Run \x1b[1magent-logs uninstall\x1b[0m to uninstall this tool`);
     } else if (projects.withdrawn.includes(cwd)) {
       console.log(`${cyanBold("Agent Logs")} ${dim("not shared for this project")}`);
