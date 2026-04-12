@@ -455,56 +455,72 @@ async function loadSurvey() {
     const data = await apiFetch("/portal/survey");
     const preStudy = data.surveys.pre_study;
 
-    // Find the first available (unlocked, not completed) survey
     const surveyOrder = ["pre_study", "mid_semester", "post_study"];
+    const labels = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" };
+
+    // Determine which survey to show the form for
+    // Priority: URL hash > first editable (not signed, not locked)
     let activeSurveyId = null;
     let activeSurvey = null;
 
-    for (const id of surveyOrder) {
-      const s = data.surveys[id];
-      if (s.status === "not_started" || s.status === "in_progress") {
-        activeSurveyId = id;
-        activeSurvey = s;
-        break;
+    // Check if a specific survey was requested via onclick
+    const requested = container.dataset.requestedSurvey;
+    if (requested && data.surveys[requested] && !data.surveys[requested].signed_at && data.surveys[requested].status !== "locked") {
+      activeSurveyId = requested;
+      activeSurvey = data.surveys[requested];
+      delete container.dataset.requestedSurvey;
+    }
+
+    if (!activeSurvey) {
+      for (const id of surveyOrder) {
+        const s = data.surveys[id];
+        if (s.status !== "locked" && !s.signed_at) {
+          activeSurveyId = id;
+          activeSurvey = s;
+          break;
+        }
       }
     }
 
-    // Show completion status for all surveys — clickable for in-progress/not-started
+    // Status rows — signed = "Complete", locked = "Locked", otherwise clickable link
     const statusHtml = surveyOrder.map((id) => {
       const s = data.surveys[id];
-      const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[id];
-      const badge = s.status === "completed" ? '<span class="status shared">Complete</span>'
-        : s.status === "locked" ? '<span class="status withdrawn">Locked</span>'
+      const label = labels[id];
+      if (s.signed_at) {
+        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status shared">Complete</span></div>`;
+      }
+      if (s.status === "locked") {
+        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status withdrawn">Locked</span></div>`;
+      }
+      const badge = s.status === "completed" ? '<span class="status" style="background:#E8F5E9;color:#2E7D32">Submitted</span>'
         : s.status === "in_progress" ? '<span class="status" style="background:#FFF3E0;color:#E65100">In progress</span>'
         : '<span class="status withdrawn">Not started</span>';
-      const clickable = (s.status === "in_progress" || s.status === "not_started");
-      const style = clickable ? "cursor:pointer" : "";
-      const onclick = clickable ? `onclick="scrollToSurveyForm()"` : "";
-      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0;${style}" ${onclick}><span>${label}</span>${badge}</div>`;
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0;cursor:pointer" onclick="openSurvey('${id}')"><span style="color:var(--blue);text-decoration:underline">${label}</span>${badge}</div>`;
     }).join("");
 
-    // Add sign/export buttons for completed surveys
+    // Sign/export buttons for submitted-but-unsigned surveys
     const signButtons = surveyOrder.map((id) => {
       const s = data.surveys[id];
-      if (s.status !== "completed") return "";
-      const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[id];
       if (s.signed_at) {
-        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${label} signed ${new Date(s.signed_at).toLocaleDateString()}</span>
+        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${labels[id]} signed ${new Date(s.signed_at).toLocaleDateString()}</span>
           <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button></div>`;
       }
-      return `<div style="margin:8px 0">
-        <button class="btn btn-primary" onclick="signSurvey('${id}')">Sign ${label} survey</button>
-        <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button>
-      </div>`;
+      if (s.status === "completed") {
+        return `<div style="margin:8px 0">
+          <button class="btn btn-primary" onclick="signSurvey('${id}')">Sign ${labels[id]} survey</button>
+          <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button>
+        </div>`;
+      }
+      return "";
     }).join("");
 
     if (!activeSurvey) {
-      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}<div class="info-box"><strong>All available surveys complete.</strong> Thank you for your responses.</div>`;
+      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}<div class="info-box"><strong>All surveys signed.</strong> Thank you for your participation.</div>`;
       return;
     }
 
     const responses = activeSurvey.responses || {};
-    container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>` + renderSurveyForm(activeSurveyId, responses);
+    container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}` + renderSurveyForm(activeSurveyId, responses);
 
     // Auto-save on change
     let saveTimeout;
@@ -743,6 +759,12 @@ function renderSurveyForm(surveyId, responses) {
 
 window.scrollToSurveyForm = function() {
   document.getElementById("survey-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+window.openSurvey = function(surveyId) {
+  const container = document.getElementById("survey-container");
+  container.dataset.requestedSurvey = surveyId;
+  loadSurvey();
 };
 
 // Global handlers for survey sign/export (called from onclick in rendered HTML)
