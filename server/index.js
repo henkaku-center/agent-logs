@@ -261,9 +261,9 @@ app.post("/auth/verify-code", async (req, res) => {
 /* ── Ingest endpoint ── */
 
 app.post("/ingest", async (req, res) => {
-  let studentId;
+  let participantId;
   try {
-    studentId = authenticate(req);
+    participantId = authenticate(req);
   } catch (err) {
     return res.status(401).json({ error: err.message });
   }
@@ -286,7 +286,7 @@ app.post("/ingest", async (req, res) => {
   }
 
   try {
-    const ledgerRef = firestore.doc(`offsets/${studentId}/${session_id}/${file_name}`);
+    const ledgerRef = firestore.doc(`offsets/${participantId}/${session_id}/${file_name}`);
     let linesToInsert;
     let linesSkipped = 0;
     let serverOffset;
@@ -335,7 +335,7 @@ app.post("/ingest", async (req, res) => {
         let parsed;
         try { parsed = JSON.parse(line); } catch { parsed = {}; }
         return {
-          student_id: studentId,
+          participant_id: participantId,
           project_path,
           session_id,
           file_name,
@@ -349,7 +349,7 @@ app.post("/ingest", async (req, res) => {
 
       await bigquery.dataset(DATASET).table(TABLE).insert(rows);
 
-      const titleRef = firestore.doc(`session_titles/${studentId}/${session_id}/meta`);
+      const titleRef = firestore.doc(`session_titles/${participantId}/${session_id}/meta`);
       const titleDoc = await titleRef.get();
       if (!titleDoc.exists) {
         for (const line of linesToInsert) {
@@ -523,11 +523,11 @@ app.get("/portal/sessions", async (req, res) => {
                      COUNTIF(record_type='user') AS user_count,
                      COUNTIF(record_type='assistant') AS assistant_count
               FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
-              WHERE student_id = @student_id
+              WHERE participant_id = @participant_id
               GROUP BY project_path, session_id
               ORDER BY MAX(timestamp) DESC
               LIMIT @limit OFFSET @offset`,
-      params: { student_id: email, limit: limit + 1, offset },
+      params: { participant_id: email, limit: limit + 1, offset },
     });
 
     const hasMore = rows.length > limit;
@@ -741,7 +741,7 @@ app.post("/portal/delete-request", async (req, res) => {
 
   const ref = firestore.collection("delete_requests").doc();
   await ref.set({
-    student_id: email,
+    participant_id: email,
     project_path,
     session_id: session_id || null,
     reason: reason || "",
@@ -758,7 +758,7 @@ app.get("/portal/delete-requests", async (req, res) => {
   if (!email) return;
 
   const snapshot = await firestore.collection("delete_requests")
-    .where("student_id", "==", email)
+    .where("participant_id", "==", email)
     .orderBy("created_at", "desc")
     .get();
 

@@ -98,7 +98,7 @@ switch (command) {
 
       // Initialize projects config
       const projects = readProjects();
-      projects.student_id = result.email;
+      projects.participant_id = result.email;
       writeProjects(projects);
 
       // Register Claude Code hooks
@@ -167,7 +167,7 @@ switch (command) {
       try {
         const result = await login();
           const p = readProjects();
-        p.student_id = result.email;
+        p.participant_id = result.email;
         writeProjects(p);
         registerHooks();
       } catch (err) {
@@ -196,7 +196,7 @@ switch (command) {
       ` your course instructors for grading and feedback.`,
       ``,
       ` You can change this anytime with ${blue("agent-logs withdraw")}`,
-      ` ${dim("└")} ${dim(projects.student_id)}`,
+      ` ${dim("└")} ${dim(projects.participant_id)}`,
     ];
     console.log(bannerLines.join("\n"));
 

@@ -321,7 +321,7 @@ Four hooks, four roles:
 `~/.config/agent-logs/projects.yaml`:
 
 ```yaml
-student_id: tanaka@chibatech.dev   # set during agent-logs login
+participant_id: tanaka@chibatech.dev   # set during agent-logs login
 research_use: true                        # cached from server, refreshed on login
 shared:
   - /home/tanaka/coursework/web3-project
@@ -418,14 +418,14 @@ Content-Type: application/json
 ### Processing pipeline
 
 1. **Authenticate**: verify Google identity token, extract student email. The ingestion service checks that the email matches a known Claude Enterprise seat allocation. Uploads from unrecognized emails are rejected.
-2. **Deduplicate**: read the offset ledger for this session from Firestore (`offsets/{student_id}/{session_id}`). Compare the client's `offset` against the server's recorded offset. Three cases:
+2. **Deduplicate**: read the offset ledger for this session from Firestore (`offsets/{participant_id}/{session_id}`). Compare the client's `offset` against the server's recorded offset. Three cases:
    - **Offset matches**: normal append — accept all lines.
    - **Offset < server offset** (duplicate/re-upload after cursor reset): skip lines the server already has, accept only new lines beyond server offset. This makes ingestion idempotent.
    - **Offset > server offset** (gap — should not happen with append-only files): reject the upload and return the server's current offset so the client can re-align.
-3. **Write to `course.logs`** (BigQuery, identified): insert rows via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row with columns: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data` (the original JSON line as a STRING or JSON column).
-4. **Check Research-use consent**: read consent state from Firestore (`consent/{student_id}`)
-5. **If Research-use**: look up anonymous ID from Firestore (`mapping/{student_id}`), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `student_id` and structural fields scrubbed.
-6. **Update offset ledger**: write the new offset to Firestore (`offsets/{student_id}/{session_id}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent sessions).
+3. **Write to `course.logs`** (BigQuery, identified): insert rows via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row with columns: `participant_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data` (the original JSON line as a STRING or JSON column).
+4. **Check Research-use consent**: read consent state from Firestore (`consent/{participant_id}`)
+5. **If Research-use**: look up anonymous ID from Firestore (`mapping/{participant_id}`), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `participant_id` and structural fields scrubbed.
+6. **Update offset ledger**: write the new offset to Firestore (`offsets/{participant_id}/{session_id}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent sessions).
 7. **Return** success with sync state for client re-alignment:
    ```json
    {
@@ -675,7 +675,7 @@ The flow:
    - The system generates a random anonymous identifier (UUID v4, not derived from any personal attribute)
    - A PDF copy of the signed consent form (with timestamp and anonymous ID, but not student name) is generated for the student to download
    - The server stores: anonymous ID, consent timestamp, language. It does **not** store the student's name or email in the consent record.
-5. **Mapping table updated**: the ingestion service's mapping collection in Firestore (`agent-logs-admin` project, `mapping/{student_id}`) records the link between the student's email identity and their anonymous ID. This is the only place where the two are connected.
+5. **Mapping table updated**: the ingestion service's mapping collection in Firestore (`agent-logs-admin` project, `mapping/{participant_id}`) records the link between the student's email identity and their anonymous ID. This is the only place where the two are connected.
 
 #### Authentication
 
@@ -697,7 +697,7 @@ consent/{anon_id}:
   status_changed_at: datetime (nullable)
 ```
 
-No student name, email, or student ID in this document. The only link to a real identity is the mapping collection (`mapping/{student_id} → {anon_id}`), which is deleted after the withdrawal window.
+No student name, email, or student ID in this document. The only link to a real identity is the mapping collection (`mapping/{participant_id} → {anon_id}`), which is deleted after the withdrawal window.
 
 Consent records are retained for five years from end of the research project, per CIT institutional policy.
 
@@ -818,8 +818,8 @@ Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to 
 3. Claude Code hooks — `Stop` (sync per-turn sync), `SessionEnd` (final flush)
 4. `SessionStart` hook — static one-line status message ("Chiba Tech: session logs are being shared" / "not shared") so the tester always knows sync state. No interactive consent prompt (deferred to Milestone 2).
 5. Record-type and content-block filtering — exclude `file-history-snapshot`, `last-prompt`, `queue-operation`, `attribution-snapshot`, `content-replacement` by record type; strip `tool_result` content blocks within included records (retain stub with `tool_use_id` and `type`, drop `content`). Even in a safe environment, `file-history-snapshot` lines can be megabytes and `tool_result` blocks (especially `Read` results with base64 images) dominate payload size. Filtering is a simple type check + content-block walk on parsed JSON — low cost to include now, avoids retrofitting later.
-6. Ingestion service — Cloud Run endpoint that authenticates uploads and writes rows to BigQuery `course.logs` via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row: `student_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data`. No GCS objects to manage, no compaction needed.
-7. Idempotency — the offset ledger in Firestore (`offsets/{student_id}/{session_id}`) tracks the last accepted offset per session. The dedup read and offset update run in a single Firestore transaction, preventing races from concurrent `Stop` hooks.
+6. Ingestion service — Cloud Run endpoint that authenticates uploads and writes rows to BigQuery `course.logs` via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row: `participant_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data`. No GCS objects to manage, no compaction needed.
+7. Idempotency — the offset ledger in Firestore (`offsets/{participant_id}/{session_id}`) tracks the last accepted offset per session. The dedup read and offset update run in a single Firestore transaction, preventing races from concurrent `Stop` hooks.
 8. Error surfacing — `agent-logs sync` writes the last sync result (timestamp, status, error message if any) to `~/.config/agent-logs/last-sync.json`. The `SessionStart` status message includes the last sync time. `agent-logs doctor` (basic version) checks: hooks registered, auth token valid, ingestion endpoint reachable, last sync status.
 9. Manual verification — instructor queries session logs directly in BigQuery (`SELECT * FROM course.logs WHERE session_id = '...' ORDER BY offset`). No scripts or file reconstruction needed.
 
@@ -831,7 +831,7 @@ Build out the student-facing and researcher-facing features described in this do
 2. `agent-logs doctor` (full version) — check hooks registered, auth valid, server reachable, last sync status, BigQuery connectivity
 3. Install script (macOS, Linux, Windows)
 4. Cursor validation — tail hash continuity checks, re-upload on file truncation/rewrite
-5. Firestore consent and mapping collections — `consent/{anon_id}` for Research-use status, `mapping/{student_id}` for identity ↔ anonymous ID link, delete request tracking
+5. Firestore consent and mapping collections — `consent/{anon_id}` for Research-use status, `mapping/{participant_id}` for identity ↔ anonymous ID link, delete request tracking
 6. Research-use data pipeline — on ingestion, if student is Research-use: look up anonymous ID from `mapping/`, apply Phase 1 structural anonymization (`cwd`, project paths, `requestId`, `gitBranch`), write to BigQuery `research.logs`. Research dataset never contains unscrubbed structural fields.
 7. Backfill on late opt-in — when a student opts into Research-use mid-semester, anonymize and copy their existing `course.logs` rows to `research.logs` (from consent date onward)
 8. Web portal — student views (projects, sessions, consent, delete requests, sync status) and researcher views (delete queue, sync monitoring, consent overview)

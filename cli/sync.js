@@ -95,7 +95,7 @@ function discoverJsonlFiles(claudeProjectDir) {
  */
 export async function sync() {
   const projects = readProjects();
-  if (!projects.student_id) {
+  if (!projects.participant_id) {
     writeLastSync({ status: "error", error: "Not logged in" });
     return;
   }

@@ -12,7 +12,7 @@ bq mk --table \
   --time_partitioning_type=DAY \
   --project_id="$PROJECT" \
   "${DATASET}.logs_partitioned" \
-  student_id:STRING,project_path:STRING,session_id:STRING,file_name:STRING,offset:INTEGER,record_type:STRING,timestamp:TIMESTAMP,version:STRING,data:STRING
+  participant_id:STRING,project_path:STRING,session_id:STRING,file_name:STRING,offset:INTEGER,record_type:STRING,timestamp:TIMESTAMP,version:STRING,data:STRING
 
 echo "Copying data from logs to logs_partitioned..."
 bq query --use_legacy_sql=false --project_id="$PROJECT" \
