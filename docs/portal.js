@@ -412,15 +412,27 @@ async function loadConsent() {
       eduToggle.parentNode.replaceChild(newEdu, eduToggle);
     }
 
-    // Research-use toggle — on by default for unsigned, otherwise use server state
+    // Research-use toggle — always active, can be changed anytime
     resToggle.checked = isSigned ? data.research_use : true;
+    const newRes = resToggle.cloneNode(true);
+    resToggle.parentNode.replaceChild(newRes, resToggle);
+    newRes.addEventListener("change", async () => {
+      try {
+        await apiFetch("/portal/consent", {
+          method: "POST",
+          body: { research_use: newRes.checked },
+        });
+      } catch (err) {
+        newRes.checked = !newRes.checked;
+        alert(err.message);
+      }
+    });
+
     if (isSigned) {
-      resToggle.disabled = true;
-      resToggle.closest(".consent-toggle-row").classList.add("disabled");
       signArea.innerHTML = `
         <div class="info-box" style="margin-top:24px">
           <strong>✓ Signed ${new Date(data.signed_at).toLocaleDateString()}</strong>
-          <p style="margin-bottom:0">Your consent form has been signed and locked.</p>
+          <p style="margin-bottom:0">Your consent form has been signed. Research-use can be changed anytime.</p>
         </div>
         <button class="btn btn-secondary" id="consent-export-pdf" style="margin-top:12px">Export PDF</button>
       `;
@@ -431,7 +443,7 @@ async function loadConsent() {
           <h2>Consent Preferences</h2>
           <table>
             <tr><th>Educational-use</th><td>✓ Enabled</td></tr>
-            <tr><th>Research-use</th><td>${data.research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
+            <tr><th>Research-use</th><td>${newRes.checked ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
           </table>
           <div class="signature">
             <p class="check">✓ Signed by participant on ${new Date(data.signed_at).toLocaleString()}</p>
@@ -441,21 +453,6 @@ async function loadConsent() {
         `);
       });
     } else {
-      // Not signed — allow toggle changes + show sign button
-      const newRes = resToggle.cloneNode(true);
-      resToggle.parentNode.replaceChild(newRes, resToggle);
-      newRes.addEventListener("change", async () => {
-        try {
-          await apiFetch("/portal/consent", {
-            method: "POST",
-            body: { research_use: newRes.checked },
-          });
-        } catch (err) {
-          newRes.checked = !newRes.checked;
-          alert(err.message);
-        }
-      });
-
       signArea.innerHTML = `
         <div class="info-box" style="margin-top:24px">
           <p style="margin-bottom:0">I have read and understood the above information. I understand that my participation is voluntary, that I may withdraw at any time during the course and up to one month after the end of classes, and that my decision has no effect on my grades or course experience.</p>
@@ -470,6 +467,7 @@ async function loadConsent() {
         }
         showSignModal("Sign Informed Consent", async () => {
           await apiFetch("/portal/consent/sign", { method: "POST", body: {} });
+          consentSigned = false; // allow reload to show signed state
           loadConsent();
         });
       });
