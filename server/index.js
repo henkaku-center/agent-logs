@@ -505,7 +505,7 @@ async function getUnlockedSurveys() {
 
 /* ── Portal endpoints ── */
 
-/** GET /portal/sessions — list student's sessions grouped by project */
+/** GET /portal/sessions — list participant's sessions grouped by project */
 app.get("/portal/sessions", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -752,7 +752,7 @@ app.post("/portal/delete-request", async (req, res) => {
   res.json({ status: "ok", request_id: ref.id, state: "pending" });
 });
 
-/** GET /portal/delete-requests — list student's delete requests */
+/** GET /portal/delete-requests — list participant's delete requests */
 app.get("/portal/delete-requests", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;

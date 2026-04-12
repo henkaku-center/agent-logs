@@ -1,10 +1,10 @@
 # agent-logs
 
-Session log collection for Claude Code. Syncs student coding sessions to BigQuery for course feedback at Chiba Tech School of Design & Science.
+Session log collection for Claude Code. Syncs participant coding sessions to BigQuery for course feedback at Chiba Tech / Henkaku Center.
 
 ## Architecture
 
-Students install a CLI (`agent-logs`) that registers hooks in Claude Code and wraps the `claude` command with a consent dialog. On each turn, hooks sync filtered JSONL session lines to a Cloud Run ingestion service. Record-type filtering and `tool_result` stripping happen client-side before upload. The server deduplicates via a Firestore offset ledger and writes to BigQuery.
+Participants install a CLI (`agent-logs`) that registers hooks in Claude Code and wraps the `claude` command with a consent dialog. On each turn, hooks sync filtered JSONL session lines to a Cloud Run ingestion service. Record-type filtering and `tool_result` stripping happen client-side before upload. The server deduplicates via a Firestore offset ledger and writes to BigQuery.
 
 ```
 claude (shell wrapper)
@@ -24,12 +24,12 @@ claude (shell wrapper)
 
 | Directory | Description |
 |-----------|-------------|
-| `cli/` | Student-side CLI — login, sync, consent-dialog, consent-status, withdraw, doctor |
+| `cli/` | Participant-side CLI — login, sync, consent-dialog, consent-status, withdraw, doctor |
 | `server/` | Cloud Run ingestion service — auth, dedup, BigQuery writes, portal API |
-| `docs/` | GitHub Pages site — install guide, student portal (consent, surveys, sessions) |
+| `docs/` | GitHub Pages site — install guide, participant portal (consent, surveys, sessions) |
 | `context/` | Meeting notes, IRB ethics documents, system design plan |
 
-## Student setup
+## Participant setup
 
 ```bash
 curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash
@@ -47,7 +47,7 @@ agent-logs login            # re-authenticate and register hooks
 agent-logs uninstall        # remove hooks, config, wrapper, and CLI
 ```
 
-## Student portal
+## Participant portal
 
 The web portal at [agent-logs.chibatech.dev/portal.html](https://agent-logs.chibatech.dev/portal.html) provides:
 
@@ -67,4 +67,4 @@ All infrastructure runs in the `agent-logging` project (asia-northeast1):
 
 ## What gets synced
 
-Only these record types leave the student's machine: `user`, `assistant`, `system`, `progress`, `summary`, `custom-title`, `ai-title`. The `tool_result` content blocks are stripped from all records. File snapshots (`file-history-snapshot`) and other record types are excluded entirely.
+Only these record types leave the participant's machine: `user`, `assistant`, `system`, `progress`, `summary`, `custom-title`, `ai-title`. The `tool_result` content blocks are stripped from all records. File snapshots (`file-history-snapshot`) and other record types are excluded entirely.

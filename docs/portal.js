@@ -1,4 +1,4 @@
-// Agent Logs — Student Portal
+// Agent Logs — Participant Portal
 // Single-page app: auth, dashboard, consent, survey, sessions
 
 const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
@@ -64,7 +64,7 @@ function exportPDF(title, contentHtml) {
   @media print { body { margin: 20px; } }
 </style></head><body>
   <h1>${title}</h1>
-  <div class="meta">Student: ${auth?.email || ""} · Exported: ${new Date().toLocaleString()}</div>
+  <div class="meta">Participant: ${auth?.email || ""} · Exported: ${new Date().toLocaleString()}</div>
   ${contentHtml}
 </body></html>`);
   win.document.close();
@@ -398,7 +398,7 @@ async function loadConsent() {
             <tr><th>Research-use</th><td>${data.research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
           </table>
           <div class="signature">
-            <p class="check">✓ Signed by student on ${new Date(data.signed_at).toLocaleString()}</p>
+            <p class="check">✓ Signed by participant on ${new Date(data.signed_at).toLocaleString()}</p>
           </div>
         `);
       });
@@ -701,7 +701,7 @@ window.exportSurveyPDF = async function(surveyId) {
     ).join("");
 
     const signLine = survey.signed_at
-      ? `<p class="check">✓ Signed by student on ${new Date(survey.signed_at).toLocaleString()}</p>`
+      ? `<p class="check">✓ Signed by participant on ${new Date(survey.signed_at).toLocaleString()}</p>`
       : `<p style="color:#666">Not yet signed</p>`;
 
     exportPDF(`${label} Survey — Agent Logs`, `
