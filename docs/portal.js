@@ -358,14 +358,14 @@ function renderSessions(container, hasMore) {
             const ago = timeAgo(s.last_timestamp);
             const revokedClass = s.revoked ? " session-revoked" : "";
             const toggleLabel = s.revoked ? "Restore" : "Withdraw";
-            const toggleClass = s.revoked ? "btn-primary" : "btn-danger";
+            const toggleClass = "btn-secondary";
             return `
               <div class="session-row${revokedClass}">
                 <div style="flex:1">
                   <div class="session-title">${escapeHtml(truncated)}</div>
                   <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses${s.revoked ? ' · <span style="color:#C62828">withdrawn</span>' : ""}</div>
                 </div>
-                <button class="btn ${toggleClass}" style="font-size:12px;padding:4px 12px" onclick="toggleRevoke('${escapeHtml(path)}','${s.session_id}',${!s.revoked})">${toggleLabel}</button>
+                <button class="btn ${toggleClass}" style="font-size:12px;padding:4px 12px" onclick="toggleRevoke('${escapeHtml(path)}','${s.session_id}',${!s.revoked},this)">${toggleLabel}</button>
               </div>
             `;
           }).join("")}
@@ -757,20 +757,45 @@ function renderSurveyForm(surveyId, responses) {
   `;
 }
 
-window.toggleRevoke = async function(projectPath, sessionId, revoked) {
+window.toggleRevoke = async function(projectPath, sessionId, revoked, btn) {
+  const origText = btn.textContent;
+  btn.textContent = "...";
+  btn.disabled = true;
+
   try {
     await apiFetch("/portal/revoke", {
       method: "POST",
       body: { project_path: projectPath, session_id: sessionId, revoked },
     });
-    // Update local state and re-render
+
+    // Update local state
     for (const sessions of Object.values(allSessionProjects)) {
       const s = sessions.find((s) => s.session_id === sessionId);
       if (s) { s.revoked = revoked; break; }
     }
-    renderSessions(document.getElementById("sessions-container"), false);
+
+    // Update row in-place
+    const row = btn.closest(".session-row");
+    if (revoked) {
+      row.classList.add("session-revoked");
+      btn.textContent = "Restore";
+      const meta = row.querySelector(".session-meta");
+      if (meta && !meta.innerHTML.includes("withdrawn")) {
+        meta.innerHTML += ' · <span style="color:var(--dark-grey)">withdrawn</span>';
+      }
+    } else {
+      row.classList.remove("session-revoked");
+      btn.textContent = "Withdraw";
+      const meta = row.querySelector(".session-meta");
+      if (meta) meta.innerHTML = meta.innerHTML.replace(/ · <span[^>]*>withdrawn<\/span>/, "");
+    }
+    btn.style.cssText = "font-size:12px;padding:4px 12px";
+    btn.setAttribute("onclick", `toggleRevoke('${escapeHtml(projectPath)}','${sessionId}',${!revoked},this)`);
   } catch (err) {
+    btn.textContent = origText;
     alert(`Failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
   }
 };
 
