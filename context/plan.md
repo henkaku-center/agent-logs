@@ -247,7 +247,7 @@ Note that moving a project directory breaks the link with Claude Code's session 
 ### CLI commands
 
 ```
-agent-logs login          # one-time install: OAuth, hooks, config
+agent-logs login          # one-time install: email auth, hooks, config
 agent-logs doctor         # check hooks registered, auth valid, server reachable
 agent-logs consent        # start sharing logs for the current project directory
 agent-logs withdraw       # stop sharing logs for the current project directory
@@ -367,7 +367,7 @@ The sync process:
 5. **Validates continuity**: if the file is shorter than the stored offset, the file was truncated or replaced — reset the cursor to 0 and re-upload from the start (the server skips lines it already has). If the file is at least as long as the stored offset, read the last 1024 bytes before the cursor and compare their SHA-256 against the stored `tail_hash`. A mismatch means the file was rewritten (not appended) — reset cursor to 0. Cursor updates are written atomically (write to temp file, rename) to prevent corruption from interrupted writes.
 6. **Validates, filters, and strips lines**: reads from cursor to EOF but only includes lines that parse as valid JSON and match an allowed record type (see record-type filtering). Within included lines, `tool_result` content blocks are stripped (content field removed, stub retained — see content-block filtering). The read is truncated at the last complete line — any partial trailing bytes (from a crash mid-flush) are left for the next sync. Excluded record types (e.g., `file-history-snapshot`) are skipped but the cursor still advances past them.
 7. POSTs the validated lines to the ingestion endpoint with:
-   - Student identity (from stored OAuth token)
+   - Student identity (from stored auth token)
    - Project path (so the server can associate it with the right project)
    - File path relative to the project directory (to distinguish main session, subagent, and metadata files)
    - Client offset (byte position of first line in this batch)

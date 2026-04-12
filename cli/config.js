@@ -100,7 +100,7 @@ export function writeCursors(cursors) {
   renameSync(tmp, CURSORS_FILE);
 }
 
-/** Read stored OAuth token */
+/** Read stored auth token */
 export function readToken() {
   if (!existsSync(TOKEN_FILE)) return null;
   try {
@@ -110,7 +110,7 @@ export function readToken() {
   }
 }
 
-/** Write OAuth token with restrictive permissions */
+/** Write auth token with restrictive permissions */
 export function writeToken(token) {
   ensureConfigDir();
   writeFileSync(TOKEN_FILE, JSON.stringify(token, null, 2), { mode: 0o600 });
