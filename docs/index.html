@@ -95,53 +95,13 @@
         </li>
         <li>
           <strong>Use Claude Code as normal</strong>
-          <p>Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. You can ask Claude to change the share status of your project anytime.</p>
+          <p>Session logs sync automatically in the background. A status line at the bottom of Claude shows your current sharing state. <strong>You can ask Claude to change the share status of your project anytime.</strong></p>
         </li>
         <li>
           <strong>Complete participant surveys</strong>
           <p>Visit the <a href="portal.html">Participant Portal</a> to manage your consent settings and complete the required course survey.</p>
         </li>
       </ol>
-    </div>
-  </section>
-
-  <!-- Managing Projects -->
-  <section class="section" id="manage">
-    <div class="container">
-      <h2>Managing Projects</h2>
-      <p>You control which project directories are shared. Only shared projects have their Claude Code logs synced.</p>
-
-      <h3>Commands</h3>
-      <table class="project-table">
-        <thead>
-          <tr>
-            <th>Command</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>agent-logs consent</code></td>
-            <td>Start sharing logs for the current directory</td>
-          </tr>
-          <tr>
-            <td><code>agent-logs withdraw</code></td>
-            <td>Stop sharing logs for the current directory</td>
-          </tr>
-          <tr>
-            <td><code>agent-logs doctor</code></td>
-            <td>Check that everything is configured correctly</td>
-          </tr>
-          <tr>
-            <td><code>agent-logs logout</code></td>
-            <td>Clear stored credentials</td>
-          </tr>
-          <tr>
-            <td><code>agent-logs uninstall</code></td>
-            <td>Remove hooks, config, and CLI completely</td>
-          </tr>
-        </tbody>
-      </table>
 
       <div class="info-box">
         <strong>What gets shared?</strong>
@@ -150,35 +110,15 @@
     </div>
   </section>
 
-  <!-- Withdraw -->
-  <section class="section" id="withdraw">
+  <!-- Uninstall -->
+  <section class="section" id="uninstall">
     <div class="container">
-      <h2>Withdrawing</h2>
-      <p>You can stop sharing a project at any time:</p>
+      <h2>Uninstalling</h2>
+      <p>To remove agent-logs completely:</p>
       <div class="code-block">
-        <span class="command">cd ~/coursework/my-project</span><br>
-        <span class="command">agent-logs withdraw</span><br>
-        <span class="success">Sharing disabled for: /home/tanaka/coursework/my-project</span>
+        <span class="command">agent-logs uninstall</span><br>
+        <span class="command">source ~/.bashrc</span> <span class="comment"># or ~/.zshrc</span>
       </div>
-      <p>You can request deletion of previously collected data via the <a href="portal.html">Participant Portal</a> or by emailing <a href="mailto:claude@chibatech.dev">claude@chibatech.dev</a>.</p>
-    </div>
-  </section>
-
-  <!-- Troubleshooting -->
-  <section class="section" id="troubleshoot">
-    <div class="container">
-      <h2>Troubleshooting</h2>
-      <p>Run the doctor command to diagnose issues:</p>
-      <div class="code-block">
-        <span class="command">agent-logs doctor</span><br><br>
-        <span class="output">agent-logs doctor</span><br>
-        <span class="output">Auth:     logged in as tanaka@chibatech.ac.jp</span><br>
-        <span class="output">Hooks:    registered</span><br>
-        <span class="output">Projects: 2 shared, 0 withdrawn</span><br>
-        <span class="output">Last sync: ok at 2026-04-07T10:30:00Z</span><br>
-        <span class="output">Server:   https://...run.app — ok</span>
-      </div>
-
     </div>
   </section>
 
