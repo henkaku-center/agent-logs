@@ -398,7 +398,7 @@ async function loadConsent() {
         exportPDF("Consent Form — Agent Logs", `
           <h2>Consent Preferences</h2>
           <table>
-            <tr><th>Educational-use</th><td>✓ Enabled (course requirement)</td></tr>
+            <tr><th>Educational-use</th><td>✓ Enabled</td></tr>
             <tr><th>Research-use</th><td>${data.research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
           </table>
           <div class="signature">

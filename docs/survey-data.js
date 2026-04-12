@@ -19,7 +19,7 @@ const SURVEYS = {
           { id: "A0_4", text: "Primary language used in daily life / 日常生活で主に使用する言語", type: "radio", options: ["Japanese", "English", "Chinese", "Other"] },
           { id: "A0_5", text: "Japanese language proficiency / 日本語能力", type: "radio", options: ["Elementary (JLPT N5-N4)", "Intermediate (JLPT N3)", "Advanced (JLPT N2-N1)", "Native", "Prefer not to answer"] },
           { id: "A0_6", text: "Approximate years of programming experience / プログラミング経験年数", type: "radio", options: ["None", "Less than 1 year", "1-3 years", "3+ years"] },
-          { id: "A0_7", text: "Years of professional work experience / 職務経験年数", type: "radio", options: ["Not applicable / Student", "Less than 3 years", "3-10 years", "10+ years"] },
+          { id: "A0_7", text: "Years of professional work experience / 職務経験年数", type: "radio", options: ["Not applicable", "Less than 3 years", "3-10 years", "10+ years"] },
         ],
       },
       {

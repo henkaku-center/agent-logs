@@ -38,7 +38,7 @@ function stripToolResults(record) {
 
 /**
  * Convert a filesystem path to Claude Code's project directory name.
- * e.g. /home/tanaka/coursework/project -> -home-tanaka-coursework-project
+ * e.g. /home/tanaka/projects/my-project -> -home-tanaka-projects-my-project
  */
 function pathToProjectDir(fsPath) {
   return fsPath.replace(/\//g, "-").replace(/^-/, "-");

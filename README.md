@@ -1,6 +1,6 @@
 # agent-logs
 
-Session log collection for Claude Code. Syncs participant coding sessions to BigQuery for course feedback at Chiba Tech / Henkaku Center.
+Session log collection for Claude Code. Syncs participant coding sessions to BigQuery for evaluation and feedback at Chiba Tech / Henkaku Center.
 
 ## Architecture
 

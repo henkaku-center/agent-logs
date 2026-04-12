@@ -167,7 +167,7 @@ switch (command) {
       await authFetch("/portal/consent", "POST", { research_use: false });
       projects.research_use = false;
       writeProjects(projects);
-      console.log("Research-use disabled. Session logs will only be used for course purposes.");
+      console.log("Research-use disabled. Session logs will only be used for educational purposes.");
     } catch (err) {
       console.error(`Failed: ${err.message}`);
       process.exit(1);
@@ -247,7 +247,7 @@ switch (command) {
       ` ${dim(cwd)}`,
       ``,
       ` Session logs from this folder will be shared with`,
-      ` your course instructors for grading and feedback.`,
+      ` Chiba Tech for evaluation and feedback.`,
       ``,
       ` You can change this anytime with ${blue("agent-logs withdraw")}`,
       ` ${dim("└")} ${dim(projects.participant_id)}`,
@@ -383,7 +383,7 @@ switch (command) {
         console.log("\nAllowed emails:");
         for (const e of data.emails) console.log(`  ${e}`);
         if (data.domains.length === 0 && data.emails.length === 0) {
-          console.log("  (none — no students can sync)");
+          console.log("  (none — no participants can sync)");
         }
         break;
       }
