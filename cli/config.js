@@ -3,7 +3,7 @@ import { join } from "path";
 import { homedir } from "os";
 
 const CONFIG_DIR = join(homedir(), ".config", "agent-logs");
-const PROJECTS_FILE = join(CONFIG_DIR, "projects.yaml");
+const PROJECTS_FILE = join(CONFIG_DIR, "projects.json");
 const CURSORS_FILE = join(CONFIG_DIR, "cursors.json");
 const TOKEN_FILE = join(CONFIG_DIR, "token.json");
 const LAST_SYNC_FILE = join(CONFIG_DIR, "last-sync.json");
@@ -44,10 +44,35 @@ export function isShared(projects, path) {
   return projects.shared.some((s) => s.path === path);
 }
 
-/** Get consented_at timestamp for a shared path (or null) */
-export function getConsentedAt(projects, path) {
-  const entry = projects.shared.find((s) => s.path === path);
-  return entry?.consented_at || null;
+/** Add a path to shared with current timestamp, removing from withdrawn */
+export function addShared(projects, path) {
+  projects.shared = projects.shared.filter((s) => s.path !== path);
+  projects.shared.push({ path, consented_at: new Date().toISOString() });
+  projects.withdrawn = projects.withdrawn.filter((p) => p !== path);
+}
+
+/** Remove a path from shared, add to withdrawn */
+export function removeShared(projects, path) {
+  projects.shared = projects.shared.filter((s) => s.path !== path);
+  if (!projects.withdrawn.includes(path)) projects.withdrawn.push(path);
+}
+
+/** Sync research_use consent from server. Returns true if changed. */
+export async function syncConsent(projects, token, serverUrl) {
+  try {
+    const resp = await fetch(`${serverUrl}/portal/consent`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (projects.research_use !== (data.research_use || false)) {
+        projects.research_use = data.research_use || false;
+        return true;
+      }
+    }
+  } catch {}
+  return false;
 }
 
 /** Read cursors.json with atomic-write-safe fallback */

@@ -3,6 +3,18 @@
 
 const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
 
+const SURVEY_ORDER = ["pre_course", "mid_course", "post_course"];
+const SURVEY_LABELS = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" };
+
+function getSurveySections(surveyId) {
+  const survey = window.SURVEYS?.[surveyId];
+  if (!survey) return [];
+  if (surveyId === "post_course") {
+    return window.SURVEYS.pre_course.sections.filter((s) => s.phase.includes("post_course"));
+  }
+  return survey.sections;
+}
+
 function timeAgo(timestamp) {
   const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
   if (seconds < 60) return "just now";
@@ -353,7 +365,7 @@ function renderSessions(container, hasMore) {
                   <div class="session-title">${escapeHtml(truncated)}</div>
                   <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses${s.revoked ? ' · <span style="color:#C62828">withdrawn</span>' : ""}</div>
                 </div>
-                <button class="btn ${toggleClass}" style="font-size:12px;padding:4px 12px" onclick="toggleRevoke('${escapeHtml(project.project_path)}','${s.session_id}',${!s.revoked})">${toggleLabel}</button>
+                <button class="btn ${toggleClass}" style="font-size:12px;padding:4px 12px" onclick="toggleRevoke('${escapeHtml(path)}','${s.session_id}',${!s.revoked})">${toggleLabel}</button>
               </div>
             `;
           }).join("")}
@@ -459,9 +471,6 @@ async function loadSurvey() {
     const data = await apiFetch("/portal/survey");
     const preStudy = data.surveys.pre_course;
 
-    const surveyOrder = ["pre_course", "mid_course", "post_course"];
-    const labels = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" };
-
     // Determine which survey to show the form for
     // Priority: URL hash > first editable (not signed, not locked)
     let activeSurveyId = null;
@@ -476,7 +485,7 @@ async function loadSurvey() {
     }
 
     if (!activeSurvey) {
-      for (const id of surveyOrder) {
+      for (const id of SURVEY_ORDER) {
         const s = data.surveys[id];
         if (s.status !== "locked" && !s.signed_at) {
           activeSurveyId = id;
@@ -487,9 +496,9 @@ async function loadSurvey() {
     }
 
     // Status rows — signed = "Complete", locked = "Locked", otherwise clickable link
-    const statusHtml = surveyOrder.map((id) => {
+    const statusHtml = SURVEY_ORDER.map((id) => {
       const s = data.surveys[id];
-      const label = labels[id];
+      const label = SURVEY_LABELS[id];
       if (s.signed_at) {
         return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status shared">Complete</span></div>`;
       }
@@ -503,15 +512,15 @@ async function loadSurvey() {
     }).join("");
 
     // Sign/export buttons for submitted-but-unsigned surveys
-    const signButtons = surveyOrder.map((id) => {
+    const signButtons = SURVEY_ORDER.map((id) => {
       const s = data.surveys[id];
       if (s.signed_at) {
-        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${labels[id]} signed ${new Date(s.signed_at).toLocaleDateString()}</span>
+        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${SURVEY_LABELS[id]} signed ${new Date(s.signed_at).toLocaleDateString()}</span>
           <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button></div>`;
       }
       if (s.status === "completed") {
         return `<div style="margin:8px 0">
-          <button class="btn btn-primary" onclick="signSurvey('${id}')">Sign ${labels[id]} survey</button>
+          <button class="btn btn-primary" onclick="signSurvey('${id}')">Sign ${SURVEY_LABELS[id]} survey</button>
           <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button>
         </div>`;
       }
@@ -567,13 +576,7 @@ function validateSurvey(surveyId) {
   const survey = window.SURVEYS?.[surveyId];
   if (!survey) return [];
 
-  let sections = survey.sections;
-  if (surveyId === "post_course") {
-    sections = window.SURVEYS.pre_course.sections.filter(
-      (s) => s.phase.includes("post_course")
-    );
-  }
-
+  const sections = getSurveySections(surveyId);
   const form = document.getElementById("survey-form");
   if (!form) return [];
 
@@ -638,14 +641,7 @@ function renderSurveyForm(surveyId, responses) {
   const survey = window.SURVEYS?.[surveyId];
   if (!survey) return "<p>Survey definition not found.</p>";
 
-  let sections = survey.sections;
-
-  // Post-course reuses A1-A5 from pre_course
-  if (surveyId === "post_course") {
-    sections = window.SURVEYS.pre_course.sections.filter(
-      (s) => s.phase.includes("post_course")
-    );
-  }
+  const sections = getSurveySections(surveyId);
 
   const html = sections.map((section, si) => {
     const scale = section.scale || section.vignetteScale;
@@ -790,7 +786,7 @@ window.openSurvey = function(surveyId) {
 
 // Global handlers for survey sign/export (called from onclick in rendered HTML)
 window.signSurvey = function(surveyId) {
-  const label = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" }[surveyId];
+  const label = SURVEY_LABELS[surveyId];
   showSignModal(`Sign ${label} Survey`, async () => {
     await apiFetch("/portal/survey/sign", { method: "POST", body: { survey_id: surveyId } });
     loadSurvey();
@@ -798,18 +794,14 @@ window.signSurvey = function(surveyId) {
 };
 
 window.exportSurveyPDF = async function(surveyId) {
-  const label = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" }[surveyId];
+  const label = SURVEY_LABELS[surveyId];
   try {
     const data = await apiFetch("/portal/survey");
     const survey = data.surveys[surveyId];
     if (!survey || !survey.responses) { alert("No responses to export."); return; }
 
     const responses = survey.responses;
-    const surveyDef = window.SURVEYS?.[surveyId];
-    let sections = surveyDef?.sections || [];
-    if (surveyId === "post_course") {
-      sections = window.SURVEYS.pre_course.sections.filter((s) => s.phase.includes("post_course"));
-    }
+    const sections = getSurveySections(surveyId);
 
     // Build HTML with questions and answers
     let html = "";

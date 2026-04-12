@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readProjects, writeProjects, isShared, getConsentedAt, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
+import { readProjects, writeProjects, isShared, addShared, removeShared, syncConsent, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
 import { login, getToken, authFetch } from "./auth.js";
 import { registerHooks, unregisterHooks, hooksRegistered } from "./hooks.js";
@@ -115,9 +115,7 @@ switch (command) {
   case "consent": {
     const cwd = process.cwd();
     const projects = readProjects();
-    projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
-    projects.shared = projects.shared.filter((s) => s.path !== cwd);
-    projects.shared.push({ path: cwd, consented_at: new Date().toISOString() });
+    addShared(projects, cwd);
     writeProjects(projects);
     console.log(`Sharing enabled for: ${cwd}`);
     break;
@@ -126,10 +124,7 @@ switch (command) {
   case "withdraw": {
     const cwd = process.cwd();
     const projects = readProjects();
-    projects.shared = projects.shared.filter((s) => s.path !== cwd);
-    if (!projects.withdrawn.includes(cwd)) {
-      projects.withdrawn.push(cwd);
-    }
+    removeShared(projects, cwd);
     writeProjects(projects);
     console.log(`Sharing disabled for: ${cwd}`);
     console.log("Review your consent and project-level session logs at\n\x1b[4;36mhttps://agent-logs.chibatech.dev\x1b[0m");
@@ -143,7 +138,6 @@ switch (command) {
       break;
     }
     try {
-      const { authFetch } = await import("./auth.js");
       await authFetch("/portal/consent", "POST", { research_use: true });
       projects.research_use = true;
       writeProjects(projects);
@@ -162,7 +156,6 @@ switch (command) {
       break;
     }
     try {
-      const { authFetch } = await import("./auth.js");
       await authFetch("/portal/consent", "POST", { research_use: false });
       projects.research_use = false;
       writeProjects(projects);
@@ -215,22 +208,10 @@ switch (command) {
 
     // Read projects after potential login, sync consent from server
     const projects = readProjects();
-    try {
-      const token = readToken()?.token;
-      if (token) {
-        const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(3000),
-        });
-        if (resp.ok) {
-          const consent = await resp.json();
-          if (projects.research_use !== (consent.research_use || false)) {
-            projects.research_use = consent.research_use || false;
-            writeProjects(projects);
-          }
-        }
-      }
-    } catch {}
+    const token = readToken()?.token;
+    if (token && await syncConsent(projects, token, INGESTION_URL)) {
+      writeProjects(projects);
+    }
 
     // Already decided — skip
     if (isShared(projects, cwd) || projects.withdrawn.includes(cwd)) break;
@@ -260,13 +241,10 @@ switch (command) {
     process.stdout.write(`\x1b[${totalLines}A\x1b[J`);
 
     if (choice === true) {
-      projects.shared = projects.shared.filter((s) => s.path !== cwd);
-      projects.shared.push({ path: cwd, consented_at: new Date().toISOString() });
-      projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
+      addShared(projects, cwd);
       writeProjects(projects);
     } else if (choice === false) {
-      projects.withdrawn.push(cwd);
-      projects.shared = projects.shared.filter((s) => s.path !== cwd);
+      removeShared(projects, cwd);
       writeProjects(projects);
     }
     // choice === null (Esc) — do nothing, ask again next time, don't launch claude
@@ -322,9 +300,8 @@ switch (command) {
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
     if (isShared(projects, cwd)) {
-      const edu = true;
       const res = projects.research_use || false;
-      const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
+      const eduLabel = cyanBold("● Educational-use");
       const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
 
       console.log(`${cyanBold("Agent Logs")} sharing for: ${eduLabel} ${resLabel}`);

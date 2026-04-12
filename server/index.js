@@ -42,14 +42,14 @@ async function isAuthorized(email) {
   const domain = email.split("@")[1]?.toLowerCase();
   if (!domain) return false;
 
-  const domainDoc = await firestore.doc("allowlist/domains").get();
-  if (domainDoc.exists && (domainDoc.data().list || []).includes(domain)) return true;
-
-  const emailDoc = await firestore.doc("allowlist/emails").get();
-  if (emailDoc.exists && (emailDoc.data().list || []).includes(email.toLowerCase())) return true;
-
-  // Admins are always authorized
   if (ADMIN_EMAILS.includes(email.toLowerCase())) return true;
+
+  const [domainDoc, emailDoc] = await firestore.getAll(
+    firestore.doc("allowlist/domains"),
+    firestore.doc("allowlist/emails"),
+  );
+  if (domainDoc.exists && (domainDoc.data().list || []).includes(domain)) return true;
+  if (emailDoc.exists && (emailDoc.data().list || []).includes(email.toLowerCase())) return true;
 
   return false;
 }
