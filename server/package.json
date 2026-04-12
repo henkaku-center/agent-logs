@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "NODE_ENV=test node --experimental-test-module-mocks --test test/*.test.js"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^7.0.0",

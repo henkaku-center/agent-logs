@@ -9,7 +9,7 @@ const CLAUDE_DIR = join(homedir(), ".claude", "projects");
 import { INGESTION_URL } from "./constants.js";
 
 /** Record types that are synced */
-const ALLOWED_TYPES = new Set([
+export const ALLOWED_TYPES = new Set([
   "user",
   "assistant",
   "system",
@@ -23,7 +23,7 @@ const ALLOWED_TYPES = new Set([
  * Strip tool_result content blocks from a parsed record.
  * Retains stub with tool_use_id and type, drops content field.
  */
-function stripToolResults(record) {
+export function stripToolResults(record) {
   if (!record.message?.content || !Array.isArray(record.message.content)) {
     return record;
   }
@@ -40,19 +40,19 @@ function stripToolResults(record) {
  * Convert a filesystem path to Claude Code's project directory name.
  * e.g. /home/tanaka/projects/my-project -> -home-tanaka-projects-my-project
  */
-function pathToProjectDir(fsPath) {
+export function pathToProjectDir(fsPath) {
   return fsPath.replace(/\//g, "-").replace(/^-/, "-");
 }
 
 /** Compute tail hash from a buffer (SHA-256 of last 1024 bytes before offset). */
-function tailHash(buf, offset) {
+export function tailHash(buf, offset) {
   if (offset <= 0) return null;
   const start = Math.max(0, offset - 1024);
   return createHash("sha256").update(buf.subarray(start, offset)).digest("hex");
 }
 
 /** Read a slice of a file into a Buffer (offset to EOF, plus tail bytes for hash). */
-function readFileSlice(filePath, cursorOffset, fileSize) {
+export function readFileSlice(filePath, cursorOffset, fileSize) {
   const tailStart = Math.max(0, cursorOffset - 1024);
   const length = fileSize - tailStart;
   const buf = Buffer.alloc(length);
@@ -68,7 +68,7 @@ function readFileSlice(filePath, cursorOffset, fileSize) {
 /**
  * Discover all JSONL files for a project directory, including subagent files.
  */
-function discoverJsonlFiles(claudeProjectDir) {
+export function discoverJsonlFiles(claudeProjectDir) {
   const files = [];
   if (!existsSync(claudeProjectDir)) return files;
 
@@ -190,6 +190,9 @@ export async function sync() {
         continue;
       }
 
+      // Raw file offset after the complete text we consumed
+      const newFileOffset = cursor.offset + Buffer.byteLength(completeText, "utf8");
+
       // Extract session ID from file path
       const sessionId = relPath.split("/")[0].replace(".jsonl", "");
 
@@ -206,6 +209,7 @@ export async function sync() {
             session_id: sessionId,
             file_name: relPath,
             offset: cursor.offset,
+            file_offset: newFileOffset,
             lines: filteredLines,
           }),
         });
@@ -225,8 +229,8 @@ export async function sync() {
 
         const result = await resp.json();
         cursors[cursorKey] = {
-          offset: result.server_offset,
-          tail_hash: tailHash(buf, result.server_offset - tailStart),
+          offset: newFileOffset,
+          tail_hash: tailHash(buf, newFileOffset - tailStart),
         };
         writeCursors(cursors);
         totalAccepted += result.lines_accepted;

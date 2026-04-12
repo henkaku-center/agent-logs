@@ -268,18 +268,18 @@ app.post("/ingest", async (req, res) => {
     return res.status(401).json({ error: err.message });
   }
 
-  const { project_path, session_id, file_name, offset, lines } = req.body;
+  const { project_path, session_id, file_name, offset, file_offset, lines } = req.body;
 
-  if (!project_path || !session_id || !file_name || offset == null || !Array.isArray(lines)) {
+  if (!project_path || !session_id || !file_name || offset == null || file_offset == null || !Array.isArray(lines)) {
     return res.status(400).json({
-      error: "Missing required fields: project_path, session_id, file_name, offset, lines",
+      error: "Missing required fields: project_path, session_id, file_name, offset, file_offset, lines",
     });
   }
 
   if (lines.length === 0) {
     return res.json({
       status: "ok",
-      server_offset: offset,
+      server_offset: file_offset,
       lines_accepted: 0,
       lines_skipped: 0,
     });
@@ -289,7 +289,7 @@ app.post("/ingest", async (req, res) => {
     const ledgerRef = firestore.doc(`offsets/${participantId}/${session_id}/${file_name}`);
     let linesToInsert;
     let linesSkipped = 0;
-    let serverOffset;
+    const serverOffset = file_offset;
 
     await firestore.runTransaction(async (tx) => {
       const ledgerDoc = await tx.get(ledgerRef);
@@ -303,31 +303,14 @@ app.post("/ingest", async (req, res) => {
       }
 
       if (offset < currentOffset) {
-        let accumulatedOffset = offset;
-        let skipCount = 0;
-        for (const line of lines) {
-          const lineBytes = Buffer.byteLength(line, "utf8") + 1;
-          if (accumulatedOffset + lineBytes <= currentOffset) {
-            accumulatedOffset += lineBytes;
-            skipCount++;
-          } else {
-            break;
-          }
-        }
-        linesToInsert = lines.slice(skipCount);
-        linesSkipped = skipCount;
+        linesToInsert = [];
+        linesSkipped = lines.length;
       } else {
         linesToInsert = lines;
         linesSkipped = 0;
       }
 
-      let newOffset = Math.max(offset, currentOffset);
-      for (const line of linesToInsert) {
-        newOffset += Buffer.byteLength(line, "utf8") + 1;
-      }
-
-      serverOffset = newOffset;
-      tx.set(ledgerRef, { offset: newOffset, updated_at: new Date() });
+      tx.set(ledgerRef, { offset: serverOffset, updated_at: new Date() });
     });
 
     if (linesToInsert.length > 0) {
@@ -339,7 +322,6 @@ app.post("/ingest", async (req, res) => {
           project_path,
           session_id,
           file_name,
-          offset,
           record_type: parsed.type || "unknown",
           timestamp: parsed.timestamp ? new Date(parsed.timestamp).toISOString() : new Date().toISOString(),
           version: parsed.version || null,
@@ -502,6 +484,7 @@ async function getUnlockedSurveys() {
   _surveyConfigExpiry = Date.now() + 60_000;
   return _surveyConfigCache;
 }
+export function resetSurveyCache() { _surveyConfigCache = null; _surveyConfigExpiry = 0; }
 
 /* ── Portal endpoints ── */
 
@@ -890,7 +873,11 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+export { app };
+
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`agent-logs ingestion service listening on port ${PORT}`);
-});
+if (!process.env.NODE_ENV?.startsWith("test")) {
+  app.listen(PORT, () => {
+    console.log(`agent-logs ingestion service listening on port ${PORT}`);
+  });
+}
