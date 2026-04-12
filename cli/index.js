@@ -80,7 +80,7 @@ async function promptConsent() {
 }
 
 // Commands that don't require authentication
-const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-dialog", "consent-status", "sync", undefined]);
+const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-dialog", "consent-status", "context", "sync", undefined]);
 
 if (!PUBLIC_COMMANDS.has(command)) {
   const token = readToken();
@@ -233,6 +233,36 @@ switch (command) {
     }
     // choice === null (Esc) — do nothing, ask again next time, don't launch claude
     if (choice === null) process.exit(1);
+    break;
+  }
+
+  case "context": {
+    // SessionStart hook — injects agent-logs awareness into Claude's context via stdout
+    const projects = readProjects();
+    let hookCwd = process.cwd();
+    try {
+      let input = "";
+      for await (const chunk of process.stdin) input += chunk;
+      if (input) {
+        const hookData = JSON.parse(input);
+        if (hookData.cwd) hookCwd = hookData.cwd;
+      }
+    } catch {}
+
+    const shared = projects.shared.includes(hookCwd);
+    const withdrawn = projects.withdrawn.includes(hookCwd);
+    const status = shared ? "shared" : withdrawn ? "not shared" : "unknown";
+
+    // stdout → injected into Claude's context
+    console.log([
+      `[agent-logs] Session logs for this project are ${status}.`,
+      shared ? `Participant: ${projects.participant_id}. Research-use: ${projects.research_use ? "opted in" : "not enrolled"}.` : "",
+      `Available commands (run via Bash tool):`,
+      `  agent-logs consent   — start sharing logs for the current project`,
+      `  agent-logs withdraw  — stop sharing logs for the current project`,
+      `  agent-logs doctor    — check configuration and connectivity`,
+      `If the participant asks to change sharing, run the appropriate command.`,
+    ].filter(Boolean).join("\n"));
     break;
   }
 

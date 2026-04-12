@@ -6,6 +6,18 @@ const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json");
 
 /** The hooks that agent-logs registers in Claude Code */
 const AGENT_LOGS_HOOKS = {
+  SessionStart: [
+    {
+      matcher: "startup",
+      hooks: [
+        {
+          type: "command",
+          command: "agent-logs context",
+          timeout: 5,
+        },
+      ],
+    },
+  ],
   Stop: [
     {
       hooks: [
