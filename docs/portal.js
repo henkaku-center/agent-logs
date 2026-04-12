@@ -3,6 +3,40 @@
 
 const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
 
+// ── Language toggle ──
+
+function getLang() {
+  return localStorage.getItem("agent_logs_lang") || "en";
+}
+
+function setLang(lang) {
+  localStorage.setItem("agent_logs_lang", lang);
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-en][data-ja]").forEach((el) => {
+    el.textContent = el.dataset[lang];
+  });
+  const btn = document.getElementById("lang-toggle");
+  if (btn) btn.textContent = lang === "en" ? "日本語" : "English";
+}
+
+window.toggleLang = function () {
+  setLang(getLang() === "en" ? "ja" : "en");
+  // Re-render survey form if visible (it uses localizeText at render time)
+  const surveyTab = document.getElementById("tab-survey");
+  if (surveyTab && surveyTab.style.display !== "none") loadSurvey();
+};
+
+/** Pick EN or JA text from a "English / 日本語" string */
+function localizeText(text) {
+  if (!text) return "";
+  const parts = text.split(" / ");
+  if (parts.length < 2) return text;
+  return getLang() === "ja" ? parts.slice(1).join(" / ") : parts[0];
+}
+
+// Apply saved language on load
+document.addEventListener("DOMContentLoaded", () => setLang(getLang()));
+
 const SURVEY_ORDER = ["pre_course", "mid_course", "post_course"];
 const SURVEY_LABELS = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" };
 
@@ -676,11 +710,14 @@ function renderSurveyForm(surveyId, responses) {
 
   const html = sections.map((section, si) => {
     const scale = section.scale || section.vignetteScale;
+    const sectionTitle = localizeText(section.title);
+    const sectionDesc = localizeText(section.description);
     const questionsHtml = section.questions.map((q, qi) => {
       const num = qi + 1;
+      const qText = localizeText(q.text);
       if (q.type === "radio") {
         return `<div class="survey-question">
-          <div class="question-text">${num}. ${q.text}</div>
+          <div class="question-text">${num}. ${qText}</div>
           <div class="radio-group">
             ${q.options.map((opt) => `
               <label><input type="radio" name="${q.id}" value="${opt}" ${responses[q.id] === opt ? "checked" : ""}> ${opt}</label>
@@ -693,7 +730,7 @@ function renderSurveyForm(surveyId, responses) {
         const s = scale || { min: 1, max: 7, minLabel: "", maxLabel: "" };
         const range = Array.from({ length: s.max - s.min + 1 }, (_, i) => s.min + i);
         return `<div class="survey-question">
-          <div class="question-text">${num}. ${q.text}</div>
+          <div class="question-text">${num}. ${qText}</div>
           <div class="likert-scale">
             ${range.map((n) => `
               <label><input type="radio" name="${q.id}" value="${n}" ${responses[q.id] == n ? "checked" : ""}><span>${n}</span></label>
@@ -707,7 +744,7 @@ function renderSurveyForm(surveyId, responses) {
         const vs = section.vignetteScale || { min: 1, max: 7, minLabel: "", maxLabel: "" };
         const range = Array.from({ length: vs.max - vs.min + 1 }, (_, i) => vs.min + i);
         return `<div class="survey-question">
-          <div class="question-text"><strong>${num}. ${q.text}</strong></div>
+          <div class="question-text"><strong>${num}. ${qText}</strong></div>
           <p style="margin:8px 0">A. How appropriate is this task for AI?</p>
           <div class="likert-scale">
             ${range.map((n) => `
@@ -724,14 +761,14 @@ function renderSurveyForm(surveyId, responses) {
 
       if (q.type === "text") {
         return `<div class="survey-question">
-          <div class="question-text">${num}. ${q.text}</div>
+          <div class="question-text">${num}. ${qText}</div>
           <input class="form-input" name="${q.id}" value="${responses[q.id] || ""}" placeholder="${q.placeholder || ""}">
         </div>`;
       }
 
       if (q.type === "textarea") {
         return `<div class="survey-question">
-          <div class="question-text">${num}. ${q.text}</div>
+          <div class="question-text">${num}. ${qText}</div>
           <textarea class="survey-text" name="${q.id}" rows="3">${responses[q.id] || ""}</textarea>
         </div>`;
       }
@@ -739,7 +776,7 @@ function renderSurveyForm(surveyId, responses) {
       if (q.type === "checkbox") {
         const selected = (responses[q.id] || "").split("|||");
         return `<div class="survey-question">
-          <div class="question-text">${num}. ${q.text}</div>
+          <div class="question-text">${num}. ${qText}</div>
           <div class="radio-group">
             ${q.options.map((opt) => `
               <label><input type="checkbox" name="${q.id}" value="${opt}" ${selected.includes(opt) ? "checked" : ""}> ${opt}</label>
@@ -750,11 +787,11 @@ function renderSurveyForm(surveyId, responses) {
 
       if (q.type === "percentage") {
         return `<div class="survey-question">
-          <div class="question-text">${num}. ${q.text}</div>
+          <div class="question-text">${num}. ${qText}</div>
           <div class="percentage-inputs">
             ${q.categories.map((cat, ci) => `
               <div style="display:flex;align-items:center;gap:8px;margin:6px 0">
-                <label style="flex:1;font-weight:400">${cat}</label>
+                <label style="flex:1;font-weight:400">${localizeText(cat)}</label>
                 <input type="number" class="form-input" style="width:80px;margin:0" name="${q.id}_${ci}" value="${responses[q.id + "_" + ci] || ""}" min="0" max="100" placeholder="%">
               </div>
             `).join("")}
@@ -767,8 +804,8 @@ function renderSurveyForm(surveyId, responses) {
     }).join("");
 
     return `<div class="survey-section">
-      <h3>${section.id}. ${section.title}</h3>
-      <p class="section-desc">${section.description}</p>
+      <h3>${section.id}. ${sectionTitle}</h3>
+      <p class="section-desc">${sectionDesc}</p>
       ${questionsHtml}
     </div>`;
   }).join("");
@@ -776,8 +813,8 @@ function renderSurveyForm(surveyId, responses) {
   return `
     <form id="survey-form" data-survey-id="${surveyId}">
       <div class="info-box">
-        <strong>${survey.title}</strong>
-        <p style="margin-bottom:0">${survey.description}</p>
+        <strong>${localizeText(survey.title)}</strong>
+        <p style="margin-bottom:0">${localizeText(survey.description)}</p>
       </div>
       ${html}
       <div class="survey-nav">

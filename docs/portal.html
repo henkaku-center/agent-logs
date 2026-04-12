@@ -13,41 +13,46 @@
   <!-- Header -->
   <header class="site-header">
     <div class="container">
-      <img src="assets/henkaku-center-logo-white.png" alt="Henkaku Center" class="logo">
-      <nav>
-        <a href="index.html">Documentation</a>
-        <a href="portal.html" class="nav-active">Portal</a>
+      <div class="header-left">
+        <img src="assets/henkaku-center-logo-white.png" alt="Henkaku Center" class="logo">
         <span class="auth-bar" id="auth-bar"></span>
-      </nav>
+      </div>
+      <div class="header-right">
+        <nav>
+          <a href="index.html">Documentation</a>
+          <a href="portal.html" class="nav-active">Portal</a>
+        </nav>
+        <button class="lang-toggle" id="lang-toggle" onclick="toggleLang()">日本語</button>
+      </div>
     </div>
   </header>
 
   <!-- Hero -->
   <section class="hero">
     <div class="container">
-      <h1>Participant Portal</h1>
-      <p class="subtitle">Manage your consent settings, view session logs, and complete surveys.</p>
+      <h1 data-en="Participant Portal" data-ja="参加者ポータル">Participant Portal</h1>
+      <p class="subtitle" data-en="Manage your consent settings, view session logs, and complete surveys." data-ja="同意設定の管理、セッションログの閲覧、アンケートの回答ができます。">Manage your consent settings, view session logs, and complete surveys.</p>
     </div>
   </section>
 
   <!-- Login (shown when not authenticated) -->
   <section class="section" id="login-section">
     <div class="container">
-      <h2>Log In</h2>
-      <p>Use the same email as your Claude account.</p>
+      <h2 data-en="Log In" data-ja="ログイン">Log In</h2>
+      <p data-en="Use the same email as your Claude account." data-ja="Claudeアカウントと同じメールアドレスを使用してください。">Use the same email as your Claude account.</p>
 
       <div id="login-step-email">
-        <label for="login-email"><strong>Email address</strong></label>
+        <label for="login-email"><strong data-en="Email address" data-ja="メールアドレス">Email address</strong></label>
         <input type="email" id="login-email" class="form-input" placeholder="you@chibatech.dev" autocomplete="email">
-        <button class="btn btn-primary" id="login-send-btn">Send verification code</button>
+        <button class="btn btn-primary" id="login-send-btn" data-en="Send verification code" data-ja="認証コードを送信">Send verification code</button>
         <p class="form-error" id="login-error"></p>
       </div>
 
       <div id="login-step-code" style="display:none">
         <p id="login-code-msg"></p>
-        <label for="login-code"><strong>Verification code</strong></label>
+        <label for="login-code"><strong data-en="Verification code" data-ja="認証コード">Verification code</strong></label>
         <input type="text" id="login-code" class="form-input" placeholder="123456" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
-        <button class="btn btn-primary" id="login-verify-btn">Verify</button>
+        <button class="btn btn-primary" id="login-verify-btn" data-en="Verify" data-ja="認証">Verify</button>
         <p class="form-error" id="verify-error"></p>
       </div>
     </div>
@@ -59,17 +64,17 @@
     <!-- Tab navigation -->
     <nav class="portal-tabs">
       <div class="container">
-        <button class="tab active" data-tab="consent">Consent</button>
-        <button class="tab" data-tab="survey">Survey</button>
-        <button class="tab" data-tab="sessions">Logs</button>
-        <button class="tab" data-tab="dashboard">Insights</button>
+        <button class="tab active" data-tab="consent" data-en="Consent" data-ja="同意">Consent</button>
+        <button class="tab" data-tab="survey" data-en="Survey" data-ja="アンケート">Survey</button>
+        <button class="tab" data-tab="sessions" data-en="Logs" data-ja="ログ">Logs</button>
+        <button class="tab" data-tab="dashboard" data-en="Insights" data-ja="分析">Insights</button>
       </div>
     </nav>
 
     <!-- Dashboard -->
     <section class="section" id="tab-dashboard" style="display:none">
       <div class="container">
-        <h2>Dashboard</h2>
+        <h2 data-en="Dashboard" data-ja="ダッシュボード">Dashboard</h2>
         <div class="status-grid" id="dashboard-cards"></div>
       </div>
     </section>
@@ -77,7 +82,7 @@
     <!-- Consent -->
     <section class="section" id="tab-consent">
       <div class="container">
-        <h2>Informed Consent</h2>
+        <h2 data-en="Informed Consent" data-ja="インフォームド・コンセント">Informed Consent</h2>
 
         <div class="consent-toggles" id="consent-toggle-box">
           <div class="consent-toggle-row">
@@ -86,8 +91,8 @@
               <span class="toggle-slider"></span>
             </label>
             <div>
-              <span class="consent-toggle-label" id="educational-label">Educational-use</span>
-              <div class="consent-toggle-hint">Session logs shared with instructors for evaluation and feedback. One-time consent.</div>
+              <span class="consent-toggle-label" id="educational-label" data-en="Educational-use" data-ja="教育利用">Educational-use</span>
+              <div class="consent-toggle-hint" data-en="Session logs shared with instructors for evaluation and feedback. One-time consent." data-ja="セッションログを担当教員と共有し、評価とフィードバックに使用します。一度限りの同意です。">Session logs shared with instructors for evaluation and feedback. One-time consent.</div>
             </div>
           </div>
           <div class="consent-toggle-row">
@@ -96,94 +101,94 @@
               <span class="toggle-slider"></span>
             </label>
             <div>
-              <span class="consent-toggle-label" id="consent-label">Research-use</span>
-              <div class="consent-toggle-hint">Anonymised session logs used for academic research. Can be changed anytime.</div>
+              <span class="consent-toggle-label" id="consent-label" data-en="Research-use" data-ja="研究利用">Research-use</span>
+              <div class="consent-toggle-hint" data-en="Anonymised session logs used for academic research. Can be changed anytime." data-ja="匿名化されたセッションログを学術研究に使用します。いつでも変更可能です。">Anonymised session logs used for academic research. Can be changed anytime.</div>
             </div>
           </div>
         </div>
 
         <div id="consent-form-content">
           <div class="consent-document">
-            <h3>CHIBA INSTITUTE OF TECHNOLOGY</h3>
-            <h3>Fostering AI Collaboration Skills: A Longitudinal Study of Interaction Patterns and Skill Development</h3>
+            <h3 data-en="CHIBA INSTITUTE OF TECHNOLOGY" data-ja="千葉工業大学">CHIBA INSTITUTE OF TECHNOLOGY</h3>
+            <h3 data-en="Fostering AI Collaboration Skills: A Longitudinal Study of Interaction Patterns and Skill Development" data-ja="AIと協働する力を育む：相互作用パターンとスキル発達の縦断的研究">Fostering AI Collaboration Skills: A Longitudinal Study of Interaction Patterns and Skill Development</h3>
 
             <div class="info-box">
-              <p><strong>Principal Investigator:</strong> Joseph Austerweil, Senior Researcher, Henkaku Center, Chiba Institute of Technology</p>
-              <p><strong>Contact:</strong> joseph.austerweil@chibatech.ac.jp</p>
-              <p style="margin-bottom:0"><strong>Research Period:</strong> After ethics approval – March 31, 2029</p>
+              <p><strong data-en="Principal Investigator:" data-ja="研究代表者:">Principal Investigator:</strong> <span data-en="Joseph Austerweil, Senior Researcher, Henkaku Center, Chiba Institute of Technology" data-ja="オウステウェイル ジョセフ、主任研究員、変革センター、千葉工業大学">Joseph Austerweil, Senior Researcher, Henkaku Center, Chiba Institute of Technology</span></p>
+              <p><strong data-en="Contact:" data-ja="連絡先:">Contact:</strong> joseph.austerweil@chibatech.ac.jp</p>
+              <p style="margin-bottom:0"><strong data-en="Research Period:" data-ja="研究期間:">Research Period:</strong> <span data-en="April 7, 2026 – March 31, 2029" data-ja="2026年4月7日〜2029年3月31日">April 7, 2026 – March 31, 2029</span></p>
             </div>
 
-            <h4>1. Purpose of This Study</h4>
-            <p>This study investigates how students develop AI collaboration skills over the course of a semester of structured instruction. As AI tools become a routine part of education and professional practice, understanding how students learn to work effectively with these tools is increasingly important.</p>
-            <p>The study examines what kinds of AI students engage in naturally as part of their coursework, what patterns of interaction are associated with better learning outcomes, and what potential side effects may arise from sustained AI use in the classroom.</p>
+            <h4 data-en="1. Purpose of This Study" data-ja="1. 本研究の目的">1. Purpose of This Study</h4>
+            <p data-en="This study investigates how students develop AI collaboration skills over the course of a semester of structured instruction. As AI tools become a routine part of education and professional practice, understanding how students learn to work effectively with these tools is increasingly important." data-ja="本研究は、構造化された授業を通じて、学生がどのようにAIとの協働スキルを発展させるかを調査するものです。AIツールが教育および職業実践の日常的な一部となるにつれ、学生がこれらのツールと効果的に連携する方法を学ぶ過程を理解することがますます重要になっています。">This study investigates how students develop AI collaboration skills over the course of a semester of structured instruction. As AI tools become a routine part of education and professional practice, understanding how students learn to work effectively with these tools is increasingly important.</p>
+            <p data-en="The study examines what kinds of AI students engage in naturally as part of their coursework, what patterns of interaction are associated with better learning outcomes, and what potential side effects may arise from sustained AI use in the classroom." data-ja="本研究では、学生が課題の一部として自然に従事するAI活用の種類、より良い学習成果に関連付けられる相互作用パターン、および教室でのAI継続使用から生じる可能性のある潜在的な副作用を検証するものです。">The study examines what kinds of AI students engage in naturally as part of their coursework, what patterns of interaction are associated with better learning outcomes, and what potential side effects may arise from sustained AI use in the classroom.</p>
 
-            <h4>2. What Participation Involves</h4>
-            <p>If you consent, your <strong>anonymized</strong> session logs, survey responses, and structured reflections may be used for research analysis and academic publication, in addition to the normal instructional use that applies to all enrolled students.</p>
-            <p>Participation involves completing research surveys at the beginning, middle, and end of the semester. These include measures of AI tool familiarity, confidence in working with AI systems, cognitive style, and metacognitive self-regulation. The total additional time commitment is approximately 45–60 minutes across the semester (roughly 25–30 minutes at Session 1 and 15–30 minutes spread across later sessions). In addition, your existing coursework data (session logs and course-embedded reflections) may be used for research purposes.</p>
-            <p><strong>What session logs contain:</strong> Prompts you submit to the AI, responses generated by the AI, timestamps, token counts, and tool invocations (e.g., file edits, code execution).</p>
-            <p><strong>What session logs do not contain:</strong> Audio, video, or screen recordings; keystroke or input data outside of AI interactions; browsing history or activity in other applications; physiological or biometric data.</p>
-            <p><strong>Surveys and reflections:</strong> The research surveys cover topics such as AI tool familiarity, task delegation judgment, self-efficacy in specifying intent to AI, metacognitive awareness of AI collaboration, metacognitive self-regulation, cognitive reflection, need for cognition, and intellectual humility. Some course-embedded reflections (e.g., prompt snapshots, mid-semester check-ins, peer ratings) are completed by all students as part of normal coursework; for participants, these may also be used for research purposes.</p>
+            <h4 data-en="2. What Participation Involves" data-ja="2. 参加の内容">2. What Participation Involves</h4>
+            <p data-en="If you consent, your anonymized session logs, survey responses, and structured reflections may be used for research analysis and academic publication, in addition to the normal instructional use that applies to all enrolled students." data-ja="同意をいただいた場合、個人を特定できない形式に匿名化されたセッションログ（session logs）、調査回答、および構造化された振り返りは、全て登録された学生に適用される通常の教育的利用に加えて、研究分析および学術出版に使用される場合があります。"><strong>If you consent</strong>, your anonymized session logs, survey responses, and structured reflections may be used for research analysis and academic publication, in addition to the normal instructional use that applies to all enrolled students.</p>
+            <p data-en="Participation involves completing research surveys at the beginning, middle, and end of the semester. These include measures of AI tool familiarity, confidence in working with AI systems, cognitive style, and metacognitive self-regulation. The total additional time commitment is approximately 45–60 minutes across the semester (roughly 25–30 minutes at Session 1 and 15–30 minutes spread across later sessions). In addition, your existing coursework data (session logs and course-embedded reflections) may be used for research purposes." data-ja="参加には、学期の開始時、中盤、および終了時に研究調査票を完成させることが含まれます。これらはAIツールの使い慣れ度、AIシステムとの作業における自信、認知スタイル、およびメタ認知的自己調整の測定を含みます。追加の時間的負担の合計は、学期全体でおよそ45〜60分です（セッション1で約25〜30分、後のセッション全体で15〜30分）。さらに、既存の課題データ（セッションログおよび課題に組み込まれた振り返り）は研究目的で使用される場合があります。">Participation involves completing research surveys at the beginning, middle, and end of the semester. These include measures of AI tool familiarity, confidence in working with AI systems, cognitive style, and metacognitive self-regulation. The total additional time commitment is approximately 45–60 minutes across the semester (roughly 25–30 minutes at Session 1 and 15–30 minutes spread across later sessions). In addition, your existing coursework data (session logs and course-embedded reflections) may be used for research purposes.</p>
+            <p data-en="What session logs contain: Prompts you submit to the AI, responses generated by the AI, timestamps, token counts, and tool invocations (e.g., file edits, code execution)." data-ja="セッションログに含まれるもの：AIに送信されたプロンプト、AIが生成した応答、タイムスタンプ、トークン数、およびツール呼び出し（例：ファイル編集、コード実行）。"><strong data-en="What session logs contain:" data-ja="セッションログに含まれるもの：">What session logs contain:</strong> Prompts you submit to the AI, responses generated by the AI, timestamps, token counts, and tool invocations (e.g., file edits, code execution).</p>
+            <p data-en="What session logs do not contain: Audio, video, or screen recordings; keystroke or input data outside of AI interactions; browsing history or activity in other applications; physiological or biometric data." data-ja="セッションログに含まれないもの：音声、ビデオ、またはスクリーン録画；AI相互作用外のキーストロークまたは入力データ；ブラウジング履歴または他のアプリケーション内のアクティビティ；生理学的またはバイオメトリクスデータ。"><strong data-en="What session logs do not contain:" data-ja="セッションログに含まれないもの：">What session logs do not contain:</strong> Audio, video, or screen recordings; keystroke or input data outside of AI interactions; browsing history or activity in other applications; physiological or biometric data.</p>
+            <p data-en="Surveys and reflections: The research surveys cover topics such as AI tool familiarity, task delegation judgment, self-efficacy in specifying intent to AI, metacognitive awareness of AI collaboration, metacognitive self-regulation, cognitive reflection, need for cognition, and intellectual humility. Some course-embedded reflections (e.g., prompt snapshots, mid-semester check-ins, peer ratings) are completed by all students as part of normal coursework; for participants, these may also be used for research purposes." data-ja="調査および振り返り：研究調査票は、AIツールの使い慣れ度、タスク委任判断、AIへの意図指定における自己効力感、AI協働についてのメタ認知的認識、メタ認知的自己調整、認知的反省、認知の必要性、および知的謙虚などのテーマをカバーしています。課題に組み込まれた振り返り（例：プロンプトスナップショット、学期中盤のチェックイン、ピア評価）の一部は、通常の課題の一部として全学生が完成させます；参加者の場合、これらは研究目的で使用される場合もあります。"><strong data-en="Surveys and reflections:" data-ja="調査および振り返り：">Surveys and reflections:</strong> The research surveys cover topics such as AI tool familiarity, task delegation judgment, self-efficacy in specifying intent to AI, metacognitive awareness of AI collaboration, metacognitive self-regulation, cognitive reflection, need for cognition, and intellectual humility. Some course-embedded reflections (e.g., prompt snapshots, mid-semester check-ins, peer ratings) are completed by all students as part of normal coursework; for participants, these may also be used for research purposes.</p>
 
-            <h4>3. Insight Reports</h4>
-            <p>All students, regardless of participation, receive a <strong>Personal Insights</strong> report showing their own interaction patterns (session frequency, duration, prompt characteristics).</p>
-            <p>Students who consent to participate additionally receive a <strong>Cohort Insights</strong> report: anonymized aggregate patterns from peers that provide context for interpreting your own data, and connections between your survey responses and AI usage patterns. These features are only possible through the research analysis your consent enables.</p>
+            <h4 data-en="3. Insight Reports" data-ja="3. 個人分析ダッシュボード">3. Insight Reports</h4>
+            <p data-en="All students, regardless of participation, receive a Personal Insights report showing their own interaction patterns (session frequency, duration, prompt characteristics)." data-ja="参加の有無に関わらず、全学生は基本的な分析ダッシュボードを受け取ります。このダッシュボードには、独自の相互作用パターン（セッション頻度、期間、プロンプト特性）が表示されます。">All students, regardless of participation, receive a <strong>Personal Insights</strong> report showing their own interaction patterns (session frequency, duration, prompt characteristics).</p>
+            <p data-en="Students who consent to participate additionally receive a Cohort Insights report: anonymized aggregate patterns from peers that provide context for interpreting your own data, and connections between your survey responses and AI usage patterns. These features are only possible through the research analysis your consent enables." data-ja="参加に同意した学生は、さらに拡張機能を受け取ります。これには、独自のデータを解釈するための文脈を提供するピアからの匿名化された集約パターン、および調査回答とAI使用パターンとの関連付けが含まれます。これらの機能は、同意によって可能にされた研究分析を通じてのみ利用可能です。">Students who consent to participate additionally receive a <strong>Cohort Insights</strong> report: anonymized aggregate patterns from peers that provide context for interpreting your own data, and connections between your survey responses and AI usage patterns. These features are only possible through the research analysis your consent enables.</p>
 
-            <h4>4. Research-use Opt In Is Voluntary</h4>
+            <h4 data-en="4. Research-use Opt In Is Voluntary" data-ja="4. 参加は任意です">4. Research-use Opt In Is Voluntary</h4>
             <div class="info-box warning">
-              <p style="margin-bottom:0"><strong>Your instructor will not know whether you have chosen to participate. Your decision has no effect on your grade or your experience in this course.</strong></p>
+              <p style="margin-bottom:0" data-en="Your instructor will not know whether you have chosen to participate. Your decision has no effect on your grade or your experience in this course." data-ja="担当講師は、参加することを選択したかどうかは知りません。決定は、成績またはこの課程での経験に影響を与えません。"><strong>Your instructor will not know whether you have chosen to participate. Your decision has no effect on your grade or your experience in this course.</strong></p>
             </div>
-            <p>Students who do not consent receive the same instruction, AI tool access, feedback, and grades as participants. You may change your mind and opt in at any later point during the semester. You will never be identified as a non-participant to instructors, peers, or anyone outside the research team.</p>
+            <p data-en="Students who do not consent receive the same instruction, AI tool access, feedback, and grades as participants. You may change your mind and opt in at any later point during the semester. You will never be identified as a non-participant to instructors, peers, or anyone outside the research team." data-ja="同意しない学生は、参加者と同じ授業、AIツールアクセス、フィードバック、および成績を受けます。学期中のいつでも気が変わって参加することを選択できます。講師、ピア、または研究チーム外の誰に対しても、非参加者として識別されることはありません。">Students who do not consent receive the same instruction, AI tool access, feedback, and grades as participants. You may change your mind and opt in at any later point during the semester. You will never be identified as a non-participant to instructors, peers, or anyone outside the research team.</p>
 
-            <h4>5. Separation of Instruction and Research</h4>
-            <p>The principal investigator for this study is also a course instructor. To protect you from any perceived pressure, the following structural safeguards are in place:</p>
+            <h4 data-en="5. Separation of Instruction and Research" data-ja="5. 教育と研究の分離">5. Separation of Instruction and Research</h4>
+            <p data-en="The principal investigator for this study is also a course instructor. To protect you from any perceived pressure, the following structural safeguards are in place:" data-ja="本研究の研究責任者は、コース講師でもあります。教員と学生という関係性に起因する潜在的な影響を排除するため、以下の構造的保護措置が講じられています：">The principal investigator for this study is also a course instructor. To protect you from any perceived pressure, the following structural safeguards are in place:</p>
             <ul>
-              <li>Recruitment is conducted by co-investigators (Grisha Szep, Researcher, Henkaku Center; Fiza Razik, Visiting Researcher, Henkaku Center) who hold no evaluative role in either course. The PI and all course instructors are absent during recruitment.</li>
-              <li>The research system does not reveal participation status to instructors at any point.</li>
-              <li>Grading is handled entirely through the university's standard academic systems, which are separate from the research system. The research data collected under this agreement is not linked to grades.</li>
-              <li>An encrypted identity mapping is maintained by the data custodians (co-investigators listed above). This mapping exists solely to process withdrawal requests, and is permanently destroyed one month after the end of classes.</li>
+              <li data-en="Recruitment is conducted by co-investigators (Grisha Szep, Researcher, Henkaku Center; Fiza Razik, Visiting Researcher, Henkaku Center) who hold no evaluative role in either course. The PI and all course instructors are absent during recruitment." data-ja="募集は共同研究者（グリシャ ゼップ、変革センター研究員；フィーザー ラジック、変革センター客員研究員）が担当する。いずれもどちらのコースでも成績評価に関与しない。研究代表者および全てのコース講師は、募集期間中は不在とする。">Recruitment is conducted by co-investigators (Grisha Szep, Researcher, Henkaku Center; Fiza Razik, Visiting Researcher, Henkaku Center) who hold no evaluative role in either course. The PI and all course instructors are absent during recruitment.</li>
+              <li data-en="The research system does not reveal participation status to instructors at any point." data-ja="研究データシステムは、いかなる時点でも参加状況を講師に開示しない。">The research system does not reveal participation status to instructors at any point.</li>
+              <li data-en="Grading is handled entirely through the university's standard academic systems, which are separate from the research system. The research data collected under this agreement is not linked to grades." data-ja="成績評価は、研究データシステムとは別の大学の標準的な学術システムを通じて完全に処理される。本合意に基づいて収集された研究データは、成績と関連付けられていない。">Grading is handled entirely through the university's standard academic systems, which are separate from the research system. The research data collected under this agreement is not linked to grades.</li>
+              <li data-en="An encrypted identity mapping is maintained by the data custodians (co-investigators listed above). This mapping exists solely to process withdrawal requests, and is permanently destroyed one month after the end of classes." data-ja="暗号化された匿名化対応表は、データ管理者（上記の共同研究者）が保持する。この対応表は、撤回要求を処理するためだけに利用され、クラス終了から1ヶ月後に永久に削除される。">An encrypted identity mapping is maintained by the data custodians (co-investigators listed above). This mapping exists solely to process withdrawal requests, and is permanently destroyed one month after the end of classes.</li>
             </ul>
 
-            <h4>6. How Your Identity Is Protected</h4>
-            <p>Upon logging in to the CLI tool, the system generates a <strong>random anonymous identifier</strong> for you. This identifier is stored in a signed research token on your machine. The link between your email and your anonymous identifier is stored <strong>encrypted</strong> on the server — the server does not store any plaintext mapping between your anonymous identifier and your name, email, or university ID.</p>
-            <p>You use your research token to sync session data and to access your insight reports. Research data and your identity are stored on <strong>separate systems</strong>. The research system contains no names, student IDs, or other personally identifying information. All analysis, publication, and dataset sharing uses anonymous identifiers exclusively.</p>
-            <p><strong>Data retention:</strong> Research data is retained for five years from the end of the research project, consistent with CIT institutional policy, and then deleted. The encryption key for the sealed identity mapping is permanently destroyed one month after the end of classes, at which point all retained data becomes irreversibly anonymized.</p>
-            <p><strong>Small cohort protections (APS-I):</strong> For the APS-I cohort (6–15 students), additional protections are used to prevent re-identification: suppression of cells with fewer than 5 observations, composite descriptions combining similar cases, and aggregation across multiple cohorts where possible.</p>
+            <h4 data-en="6. How Your Identity Is Protected" data-ja="6. 個人情報の保護方法">6. How Your Identity Is Protected</h4>
+            <p data-en="Upon logging in to the CLI tool, the system generates a random anonymous identifier for you. This identifier is stored in a signed research token on your machine. The link between your email and your anonymous identifier is stored encrypted on the server — the server does not store any plaintext mapping between your anonymous identifier and your name, email, or university ID." data-ja="CLIツールにログインすると、システムはランダムな匿名識別子を生成します。この識別子は、お使いのマシン上の署名済みリサーチトークンに保存されます。メールアドレスと匿名識別子の対応関係はサーバー上に暗号化された状態で保存されます。サーバーは、匿名識別子と名前、メール、または大学IDのいかなる対応表も保存しません。">Upon logging in to the CLI tool, the system generates a <strong>random anonymous identifier</strong> for you. This identifier is stored in a signed research token on your machine. The link between your email and your anonymous identifier is stored <strong>encrypted</strong> on the server — the server does not store any plaintext mapping between your anonymous identifier and your name, email, or university ID.</p>
+            <p data-en="You use your research token to sync session data and to access your insight reports. Research data and your identity are stored on separate systems. The research system contains no names, student IDs, or other personally identifying information. All analysis, publication, and dataset sharing uses anonymous identifiers exclusively." data-ja="リサーチトークンを使用して、分析ダッシュボードを表示したり、同意を取り消したりすることができます。研究データと個人識別情報は別々のシステムに保存されます。研究データシステムには、名前、学生ID、またはその他の個人識別情報は含まれません。全ての分析、出版、およびデータセット共有は、匿名識別子のみを使用します。">You use your research token to sync session data and to access your insight reports. Research data and your identity are stored on <strong>separate systems</strong>. The research system contains no names, student IDs, or other personally identifying information. All analysis, publication, and dataset sharing uses anonymous identifiers exclusively.</p>
+            <p data-en="Data retention: Research data is retained for five years from the end of the research project, consistent with CIT institutional policy, and then deleted. The encryption key for the sealed identity mapping is permanently destroyed one month after the end of classes, at which point all retained data becomes irreversibly anonymized." data-ja="データ保持：研究データは、研究プロジェクトの終了から5年間、保持され、その後削除されます。暗号化された匿名化対応表の暗号鍵は、クラス終了から1ヶ月後に永久に削除され、その時点で保持されている全てのデータが不可逆的に匿名化されます。"><strong data-en="Data retention:" data-ja="データ保持：">Data retention:</strong> Research data is retained for five years from the end of the research project, consistent with CIT institutional policy, and then deleted. The encryption key for the sealed identity mapping is permanently destroyed one month after the end of classes, at which point all retained data becomes irreversibly anonymized.</p>
+            <p data-en="Small cohort protections (APS-I): For the APS-I cohort (6–15 students), additional protections are used to prevent re-identification: suppression of cells with fewer than 5 observations, composite descriptions combining similar cases, and aggregation across multiple cohorts where possible." data-ja="小規模コホート保護（APS-I）：APS-Iコホート（6〜15人の学生）の場合、再識別を防ぐために追加の保護が使用されます：5未満の観測を持つセルの抑制、類似ケースを組み合わせた複合記述、および可能な限り複数のコホート全体での集約。"><strong data-en="Small cohort protections (APS-I):" data-ja="小規模コホート保護（APS-I）：">Small cohort protections (APS-I):</strong> For the APS-I cohort (6–15 students), additional protections are used to prevent re-identification: suppression of cells with fewer than 5 observations, composite descriptions combining similar cases, and aggregation across multiple cohorts where possible.</p>
             <div class="info-box warning">
-              <p><strong>Incidental sensitive content:</strong> Session logs capture the full content of your interactions with AI tools. If you discuss personal matters with the AI during a coursework session, that content will appear in the logs. You are advised to be mindful of what you share. If a researcher encounters clearly sensitive personal content (e.g., health information, relationship difficulties, financial hardship), it will be permanently deleted.</p>
-              <p style="margin-bottom:0">If, during the course of research analysis, a researcher encounters information in session logs suggesting a serious safety concern (e.g., risk of self-harm or abuse), the research team will follow CIT's established student welfare reporting procedures.</p>
+              <p data-en="Incidental sensitive content: Session logs capture the full content of your interactions with AI tools. If you discuss personal matters with the AI during a coursework session, that content will appear in the logs. You are advised to be mindful of what you share. If a researcher encounters clearly sensitive personal content (e.g., health information, relationship difficulties, financial hardship), it will be permanently deleted." data-ja="付随的に発見された機密コンテンツ：セッションログは、AIツールとの相互作用の完全なコンテンツをキャプチャします。コースワークセッション中にAIと個人的な事柄について話し合う場合、そのコンテンツはログに表示されます。共有内容に注意することをお勧めします。研究者が明らかに機密性の高い個人コンテンツ（例：健康情報、人間関係の困難、経済的困難）に遭遇した場合、永久に削除されます。"><strong data-en="Incidental sensitive content:" data-ja="付随的に発見された機密コンテンツ：">Incidental sensitive content:</strong> Session logs capture the full content of your interactions with AI tools. If you discuss personal matters with the AI during a coursework session, that content will appear in the logs. You are advised to be mindful of what you share. If a researcher encounters clearly sensitive personal content (e.g., health information, relationship difficulties, financial hardship), it will be permanently deleted.</p>
+              <p style="margin-bottom:0" data-en="If, during the course of research analysis, a researcher encounters information in session logs suggesting a serious safety concern (e.g., risk of self-harm or abuse), the research team will follow CIT's established student welfare reporting procedures." data-ja="研究分析の過程で、研究者がセッションログの情報から深刻な安全上の懸念（例：自傷や虐待のリスク）を示唆する情報に遭遇した場合、研究チームは千葉工業大学の学生福祉センターの指針に従います。">If, during the course of research analysis, a researcher encounters information in session logs suggesting a serious safety concern (e.g., risk of self-harm or abuse), the research team will follow CIT's established student welfare reporting procedures.</p>
             </div>
 
-            <h4>7. Withdrawal</h4>
-            <p>You may withdraw your consent at any time during the course and up to one month after the end of classes, with no disadvantage of any kind.</p>
-            <p><strong>Cooling-off period:</strong> If you consent during or shortly after Session 1, you have a 14-day cooling-off period during which you may withdraw with full and immediate deletion of any data collected. No research analysis is performed during this period.</p>
-            <p><strong>Standard withdrawal:</strong> After the cooling-off period, you may withdraw at any time. All research data associated with your anonymous identifier is permanently deleted. Your grades, AI tool access, and instruction are not affected.</p>
-            <p><strong>Withdrawal deadline:</strong> One month after the end of classes, the sealed identity mapping is permanently destroyed. After this date, withdrawal is not possible because no person or system can determine which anonymous record belongs to which individual. You will be informed of this deadline at the time of consent and reminded again at the end of the course.</p>
-            <p><strong>How to withdraw:</strong> Toggle Research-use off on this page, or contact the data custodians (Grisha Szep or Fiza Razik) directly.</p>
-            <p><strong>Ongoing consent:</strong> Before any new research analysis is conducted, all participants are notified through the course portal with at least 14 days' notice and an opportunity to withdraw.</p>
+            <h4 data-en="7. Withdrawal" data-ja="7. 同意の撤回">7. Withdrawal</h4>
+            <p data-en="You may withdraw your consent at any time during the course and up to one month after the end of classes, with no disadvantage of any kind." data-ja="いかなる不利益を受けることもなく、コースの期間中およびクラス終了から1ヶ月後まで、いつでも同意を取り消すことができます。">You may withdraw your consent at any time during the course and up to one month after the end of classes, with no disadvantage of any kind.</p>
+            <p data-en="Cooling-off period: If you consent during or shortly after Session 1, you have a 14-day cooling-off period during which you may withdraw with full and immediate deletion of any data collected. No research analysis is performed during this period." data-ja="再考期間：セッション1の間または直後に同意した場合、14日間の再考期間があり、その間に収集されたデータの完全かつ即座の削除により取り消すことができます。この期間中は研究分析は行われません。"><strong data-en="Cooling-off period:" data-ja="再考期間：">Cooling-off period:</strong> If you consent during or shortly after Session 1, you have a 14-day cooling-off period during which you may withdraw with full and immediate deletion of any data collected. No research analysis is performed during this period.</p>
+            <p data-en="Standard withdrawal: After the cooling-off period, you may withdraw at any time. All research data associated with your anonymous identifier is permanently deleted. Your grades, AI tool access, and instruction are not affected." data-ja="標準的な取り消し：再考期間の後、いつでも取り消すことができます。匿名識別子に関連付けられた全ての研究データは永久に削除されます。成績、AIツールアクセス、および指導は影響を受けません。"><strong data-en="Standard withdrawal:" data-ja="標準的な取り消し：">Standard withdrawal:</strong> After the cooling-off period, you may withdraw at any time. All research data associated with your anonymous identifier is permanently deleted. Your grades, AI tool access, and instruction are not affected.</p>
+            <p data-en="Withdrawal deadline: One month after the end of classes, the sealed identity mapping is permanently destroyed. After this date, withdrawal is not possible because no person or system can determine which anonymous record belongs to which individual. You will be informed of this deadline at the time of consent and reminded again at the end of the course." data-ja="撤回期限：クラス終了から1ヶ月後、封印された匿名化対応表は永久に削除されます。この日付以降、どの人物またはシステムもどの匿名の記録がどの個人に属しているかを判断できないため、撤回は不可能です。この期限は同意時に通知され、コース終了時に再度通知されます。"><strong data-en="Withdrawal deadline:" data-ja="撤回期限：">Withdrawal deadline:</strong> One month after the end of classes, the sealed identity mapping is permanently destroyed. After this date, withdrawal is not possible because no person or system can determine which anonymous record belongs to which individual. You will be informed of this deadline at the time of consent and reminded again at the end of the course.</p>
+            <p data-en="How to withdraw: Toggle Research-use off on this page, or contact the data custodians (Grisha Szep or Fiza Razik) directly." data-ja="撤回方法：このページで研究利用をオフに切り替えるか、データ管理者（グリシャ ゼップまたはフィーザー ラジック）に直接連絡してください。"><strong data-en="How to withdraw:" data-ja="撤回方法：">How to withdraw:</strong> Toggle Research-use off on this page, or contact the data custodians (Grisha Szep or Fiza Razik) directly.</p>
+            <p data-en="Ongoing consent: Before any new research analysis is conducted, all participants are notified through the course portal with at least 14 days' notice and an opportunity to withdraw." data-ja="継続的な同意：新しい研究分析を実施する前に、全ての参加者は少なくとも14日の通知と撤回の機会を含むコースポータルを通じて通知されます。"><strong data-en="Ongoing consent:" data-ja="継続的な同意：">Ongoing consent:</strong> Before any new research analysis is conducted, all participants are notified through the course portal with at least 14 days' notice and an opportunity to withdraw.</p>
 
-            <h4>8. Risks and Benefits</h4>
-            <p><strong>Benefits:</strong> Access to the Cohort Insights report described in Section 3. The study results may also contribute to improved AI education practices for future students at CIT and beyond.</p>
-            <p><strong>Risks:</strong> The primary risk concerns data privacy. Although your data is anonymized using anonymous identifiers, no system can entirely eliminate the possibility of re-identification — particularly in the smaller APS-I course, where distinctive project topics could make individuals recognizable even without names. This risk is mitigated through encrypted anonymization, permanent destruction of the identity mapping key, and the additional small-cohort protections described in Section 6.</p>
-            <p><strong>Compensation:</strong> There is no monetary compensation, gift cards, course credit, or grade adjustment for participating.</p>
+            <h4 data-en="8. Risks and Benefits" data-ja="8. リスクと利点">8. Risks and Benefits</h4>
+            <p data-en="Benefits: Access to the Cohort Insights report described in Section 3. The study results may also contribute to improved AI education practices for future students at CIT and beyond." data-ja="利点：第3節で説明した拡張分析ダッシュボードへのアクセス。研究成果は、千葉工業大学の将来の学生向けのAI教育実践の改善に貢献する可能性もあります。"><strong data-en="Benefits:" data-ja="利点：">Benefits:</strong> Access to the Cohort Insights report described in Section 3. The study results may also contribute to improved AI education practices for future students at CIT and beyond.</p>
+            <p data-en="Risks: The primary risk concerns data privacy. Although your data is anonymized using anonymous identifiers, no system can entirely eliminate the possibility of re-identification — particularly in the smaller APS-I course, where distinctive project topics could make individuals recognizable even without names. This risk is mitigated through encrypted anonymization, permanent destruction of the identity mapping key, and the additional small-cohort protections described in Section 6." data-ja="リスク：主なリスクはデータプライバシーに関連しています。データは匿名識別子を使用して匿名化されますが、どのシステムも再識別の可能性を完全に排除することはできません。特に小規模なAPS-Iコースでは、独特なプロジェクトトピックは名前がなくても個人を認識可能にする可能性があります。このリスクは、暗号化による匿名化、匿名化対応表の永久削除、および第6節で説明した追加の小規模コホート保護を通じて軽減されます。"><strong data-en="Risks:" data-ja="リスク：">Risks:</strong> The primary risk concerns data privacy. Although your data is anonymized using anonymous identifiers, no system can entirely eliminate the possibility of re-identification — particularly in the smaller APS-I course, where distinctive project topics could make individuals recognizable even without names. This risk is mitigated through encrypted anonymization, permanent destruction of the identity mapping key, and the additional small-cohort protections described in Section 6.</p>
+            <p data-en="Compensation: There is no monetary compensation, gift cards, course credit, or grade adjustment for participating." data-ja="補償：参加に対する金銭補償、ギフトカード、コースクレジット、または成績調整はありません。"><strong data-en="Compensation:" data-ja="補償：">Compensation:</strong> There is no monetary compensation, gift cards, course credit, or grade adjustment for participating.</p>
 
-            <h4>9. Publication of Results</h4>
-            <p>Results will be published in academic journals and presented at domestic and international conferences. De-identified data will be made available through open-science repositories (e.g., Open Science Framework, Zenodo) without identifying specific individuals. No individual student's data will be identifiable in any publication or dataset.</p>
+            <h4 data-en="9. Publication of Results" data-ja="9. 研究成果の公表">9. Publication of Results</h4>
+            <p data-en="Results will be published in academic journals and presented at domestic and international conferences. De-identified data will be made available through open-science repositories (e.g., Open Science Framework, Zenodo) without identifying specific individuals. No individual student's data will be identifiable in any publication or dataset." data-ja="結果は、国内外の学術雑誌および学術会議にて発表されます。匿名化されたデータは、特定の個人を特定することなく、オープンサイエンスリポジトリ（例：Open Science Framework、Zenodo）を通じて利用可能にされます。個々の学生のデータは、いかなる出版物またはデータセットでも識別可能ではありません。">Results will be published in academic journals and presented at domestic and international conferences. De-identified data will be made available through open-science repositories (e.g., Open Science Framework, Zenodo) without identifying specific individuals. No individual student's data will be identifiable in any publication or dataset.</p>
 
-            <h4>10. Intellectual Property</h4>
-            <p>Intellectual property rights arising from this research will be held by Chiba Institute of Technology and the researchers. Participants do not acquire intellectual property rights from this research.</p>
+            <h4 data-en="10. Intellectual Property" data-ja="10. 知的財産">10. Intellectual Property</h4>
+            <p data-en="Intellectual property rights arising from this research will be held by Chiba Institute of Technology and the researchers. Participants do not acquire intellectual property rights from this research." data-ja="本研究から生じる知的財産権は、千葉工業大学と研究者により保有されます。参加者は、本研究から知的財産権を取得しません。">Intellectual property rights arising from this research will be held by Chiba Institute of Technology and the researchers. Participants do not acquire intellectual property rights from this research.</p>
 
-            <h4>11. Ethics Approval and Funding</h4>
-            <p>This research has been reviewed by the Chiba Institute of Technology Ethics Review Committee for Research Involving Human Subjects and approved by the university president. The research is supported by the university budget and grants from the private sector. There are no conflicts of interest with any particular company.</p>
+            <h4 data-en="11. Ethics Approval and Funding" data-ja="11. 倫理審査承認と資金">11. Ethics Approval and Funding</h4>
+            <p data-en="This research has been reviewed by the Chiba Institute of Technology Ethics Review Committee for Research Involving Human Subjects and approved by the university president. The research is supported by the university budget and grants from the private sector. There are no conflicts of interest with any particular company." data-ja="本研究は、人間を対象とする研究に関する千葉工業大学倫理審査委員会によって審査され、大学学長により承認されています。研究は、大学予算および民間セクターからの助成金によってサポートされています。特定の企業との利益相反はありません。">This research has been reviewed by the Chiba Institute of Technology Ethics Review Committee for Research Involving Human Subjects and approved by the university president. The research is supported by the university budget and grants from the private sector. There are no conflicts of interest with any particular company.</p>
 
             <div class="info-box">
-              <p><strong>Principal Investigator</strong><br>
-              Joseph Austerweil, Chiba Institute of Technology, School of Design &amp; Science, Henkaku Center<br>
-              2-17-1 Tsudanuma, Narashino City, Chiba Prefecture<br>
-              Email: joseph.austerweil@chibatech.ac.jp</p>
-              <p><strong>Co-Investigators / Data Custodians</strong><br>
-              Grisha Szep (Researcher, Henkaku Center) · Fiza Razik (Visiting Researcher, Henkaku Center)</p>
-              <p style="margin-bottom:0"><strong>Ethics Review Committee</strong><br>
-              Chiba Institute of Technology Ethics Review Committee for Research Involving Human Subjects</p>
+              <p><strong data-en="Principal Investigator" data-ja="研究代表者">Principal Investigator</strong><br>
+              <span data-en="Joseph Austerweil, Chiba Institute of Technology, School of Design &amp; Science, Henkaku Center" data-ja="オウステウェイル ジョセフ 千葉工業大学、デザイン＆サイエンス専攻、変革センター">Joseph Austerweil, Chiba Institute of Technology, School of Design &amp; Science, Henkaku Center</span><br>
+              <span data-en="2-17-1 Tsudanuma, Narashino City, Chiba Prefecture" data-ja="2-17-1 津田沼、習志野市、千葉県">2-17-1 Tsudanuma, Narashino City, Chiba Prefecture</span><br>
+              <span data-en="Email:" data-ja="メール：">Email:</span> joseph.austerweil@chibatech.ac.jp</p>
+              <p><strong data-en="Co-Investigators / Data Custodians" data-ja="共同研究者/データ管理者">Co-Investigators / Data Custodians</strong><br>
+              <span data-en="Grisha Szep (Researcher, Henkaku Center) · Fiza Razik (Visiting Researcher, Henkaku Center)" data-ja="グリシャ ゼップ（変革センター 研究員）・フィーザー ラジック（変革センター 客員研究員）">Grisha Szep (Researcher, Henkaku Center) · Fiza Razik (Visiting Researcher, Henkaku Center)</span></p>
+              <p style="margin-bottom:0"><strong data-en="Ethics Review Committee" data-ja="倫理審査委員会">Ethics Review Committee</strong><br>
+              <span data-en="Chiba Institute of Technology Ethics Review Committee for Research Involving Human Subjects" data-ja="千葉工業大学 人間を対象とする研究に関する倫理審査委員会">Chiba Institute of Technology Ethics Review Committee for Research Involving Human Subjects</span></p>
             </div>
           </div>
         </div>
@@ -195,7 +200,7 @@
     <!-- Survey -->
     <section class="section" id="tab-survey" style="display:none">
       <div class="container">
-        <h2>Survey</h2>
+        <h2 data-en="Survey" data-ja="アンケート">Survey</h2>
         <div id="survey-container"></div>
       </div>
     </section>
@@ -203,8 +208,8 @@
     <!-- Sessions -->
     <section class="section" id="tab-sessions" style="display:none">
       <div class="container">
-        <h2>Session Logs</h2>
-        <p>Your synced Claude Code sessions, grouped by project.</p>
+        <h2 data-en="Session Logs" data-ja="セッションログ">Session Logs</h2>
+        <p data-en="Your synced Claude Code sessions, grouped by project." data-ja="プロジェクト別に整理されたClaude Codeセッション。">Your synced Claude Code sessions, grouped by project.</p>
         <div id="sessions-container"></div>
       </div>
     </section>

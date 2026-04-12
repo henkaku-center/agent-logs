@@ -99,6 +99,18 @@ strong { font-weight: 700; }
   justify-content: space-between;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .site-header .logo {
   height: 40px;
   width: auto;
@@ -108,6 +120,20 @@ strong { font-weight: 700; }
   display: flex;
   gap: 24px;
   align-items: center;
+}
+
+.lang-toggle {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.4);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 12px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.lang-toggle:hover {
+  border-color: var(--white);
 }
 
 .site-header nav a {
