@@ -114,8 +114,10 @@ export async function sync() {
   }
 
   let token;
+  let researchToken;
   try {
     token = getToken();
+    researchToken = readToken()?.research_token || null;
   } catch (err) {
     writeLastSync({ status: "error", error: `Auth failed: ${err.message}` });
     return;
@@ -211,6 +213,7 @@ export async function sync() {
             offset: cursor.offset,
             file_offset: newFileOffset,
             lines: filteredLines,
+            ...(researchToken && { research_token: researchToken }),
           }),
         });
 

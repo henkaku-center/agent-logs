@@ -111,8 +111,8 @@ export async function login() {
     throw new Error(result.error || `Verification failed: ${verifyResp.status}`);
   }
 
-  // Store token
-  writeToken({ token: result.token, email: result.email });
+  // Store token (includes research_token if server issued one)
+  writeToken({ token: result.token, email: result.email, research_token: result.research_token || null });
   // Clear auth dialog
   process.stdout.write(`\x1b[${lines}A\x1b[J`);
   return { email: result.email };

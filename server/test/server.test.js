@@ -132,6 +132,7 @@ await mock.module("googleapis", {
 process.env.JWT_SECRET = "test-secret";
 process.env.ADMIN_EMAILS = "admin@test.com";
 process.env.OTLP_SECRET = "otlp-test-secret";
+process.env.SEALED_MAPPING_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 const { app, resetSurveyCache } = await import("../../server/index.js");
 
@@ -478,7 +479,7 @@ describe("GET /portal/consent", () => {
 });
 
 describe("POST /portal/consent", () => {
-  it("enables research-use and generates anon_id", async () => {
+  it("enables research-use", async () => {
     const token = makeToken("student@chibatech.dev");
     const { status, data } = await req("/portal/consent", {
       method: "POST",
@@ -487,28 +488,21 @@ describe("POST /portal/consent", () => {
     });
     assert.equal(status, 200);
     assert.equal(data.research_use, true);
-    assert.ok(data.anon_id);
+    assert.equal(data.anon_id, undefined, "anon_id no longer returned from consent endpoint");
   });
 
-  it("preserves anon_id on re-consent", async () => {
+  it("sets consented_at on first opt-in only", async () => {
     const token = makeToken("student@chibatech.dev");
 
-    // First opt-in
-    const { data: first } = await req("/portal/consent", {
-      method: "POST", token, body: { research_use: true },
-    });
-    const anonId = first.anon_id;
+    await req("/portal/consent", { method: "POST", token, body: { research_use: true } });
+    const first = firestoreData["consent/student@chibatech.dev"];
+    const firstConsented = first.consented_at;
 
-    // Opt out
-    await req("/portal/consent", {
-      method: "POST", token, body: { research_use: false },
-    });
-
-    // Re opt-in
-    const { data: second } = await req("/portal/consent", {
-      method: "POST", token, body: { research_use: true },
-    });
-    assert.equal(second.anon_id, anonId);
+    // Opt out and re-opt-in
+    await req("/portal/consent", { method: "POST", token, body: { research_use: false } });
+    await req("/portal/consent", { method: "POST", token, body: { research_use: true } });
+    const second = firestoreData["consent/student@chibatech.dev"];
+    assert.equal(second.consented_at, firstConsented, "consented_at should not change on re-opt-in");
   });
 
   it("rejects non-boolean research_use", async () => {
@@ -712,6 +706,108 @@ describe("auth edge cases", () => {
       // Code stored under lowercase key
       assert.ok(firestoreData["auth_codes/user@test.com"]);
     });
+  });
+});
+
+// ── Research token issuance ──
+
+describe("research token", () => {
+  it("verify-code returns research_token", async () => {
+    firestoreData["auth_codes/admin@test.com"] = {
+      code: "123456",
+      created_at: new Date(),
+      expires_at: { toDate: () => new Date(Date.now() + 600000) },
+      attempts: 0,
+    };
+    const { status, data } = await req("/auth/verify-code", {
+      method: "POST",
+      body: { email: "admin@test.com", code: "123456" },
+    });
+    assert.equal(status, 200);
+    assert.ok(data.research_token);
+
+    // Verify research token contains anon_id
+    const payload = jwt.verify(data.research_token, JWT_SECRET);
+    assert.equal(payload.type, "research");
+    assert.ok(payload.anon_id);
+  });
+
+  it("creates sealed_mapping document on login", async () => {
+    firestoreData["auth_codes/admin@test.com"] = {
+      code: "111111",
+      created_at: new Date(),
+      expires_at: { toDate: () => new Date(Date.now() + 600000) },
+      attempts: 0,
+    };
+    await req("/auth/verify-code", { method: "POST", body: { email: "admin@test.com", code: "111111" } });
+
+    // Find the sealed mapping doc (keyed by sha256 of email)
+    const hash = Object.keys(firestoreData).find((k) => k.startsWith("sealed_mapping/"));
+    assert.ok(hash, "sealed_mapping document should exist");
+    const sealed = firestoreData[hash];
+    assert.ok(sealed.iv);
+    assert.ok(sealed.ciphertext);
+    assert.ok(sealed.tag);
+    assert.ok(sealed.updated_at);
+  });
+
+  it("reissues same anon_id on re-login", async () => {
+    // First login
+    firestoreData["auth_codes/admin@test.com"] = {
+      code: "111111",
+      created_at: new Date(),
+      expires_at: { toDate: () => new Date(Date.now() + 600000) },
+      attempts: 0,
+    };
+    const { data: first } = await req("/auth/verify-code", {
+      method: "POST", body: { email: "admin@test.com", code: "111111" },
+    });
+    const firstAnonId = jwt.verify(first.research_token, JWT_SECRET).anon_id;
+
+    // Second login (sealed mapping already exists)
+    firestoreData["auth_codes/admin@test.com"] = {
+      code: "222222",
+      created_at: new Date(),
+      expires_at: { toDate: () => new Date(Date.now() + 600000) },
+      attempts: 0,
+    };
+    const { data: second } = await req("/auth/verify-code", {
+      method: "POST", body: { email: "admin@test.com", code: "222222" },
+    });
+    const secondAnonId = jwt.verify(second.research_token, JWT_SECRET).anon_id;
+
+    assert.equal(firstAnonId, secondAnonId, "same anon_id should be reissued");
+  });
+
+  it("ingest accepts request with valid research_token", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = jwt.sign({ anon_id: "test-anon-id", type: "research" }, JWT_SECRET);
+    const line = JSON.stringify({ type: "user", message: { content: "hi" } });
+    const { status, data } = await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/test", session_id: "s1", file_name: "s1.jsonl",
+        offset: 0, file_offset: Buffer.byteLength(line, "utf8") + 1,
+        lines: [line], research_token: researchToken,
+      },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.lines_accepted, 1);
+  });
+
+  it("ingest works without research_token (backwards compatible)", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const line = JSON.stringify({ type: "user", message: { content: "hi" } });
+    const { status, data } = await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/test", session_id: "s2", file_name: "s2.jsonl",
+        offset: 0, file_offset: Buffer.byteLength(line, "utf8") + 1,
+        lines: [line],
+      },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.lines_accepted, 1);
   });
 });
 

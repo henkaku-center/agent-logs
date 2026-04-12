@@ -3,7 +3,7 @@ import { BigQuery } from "@google-cloud/bigquery";
 import { Firestore } from "@google-cloud/firestore";
 import jwt from "jsonwebtoken";
 import { google } from "googleapis";
-import { randomInt, randomUUID } from "crypto";
+import { randomInt, randomUUID, createHash, createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -30,6 +30,34 @@ const COWORK_TABLE = "cowork_events";
 const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production";
 const GMAIL_SENDER = process.env.GMAIL_SENDER || "claude@chibatech.dev";
 const OTLP_SECRET = process.env.OTLP_SECRET || "change-me-otlp-secret";
+const SEALED_MAPPING_KEY = process.env.SEALED_MAPPING_KEY || null;
+
+/* ── Sealed mapping helpers ── */
+
+function hashEmail(email) {
+  return createHash("sha256").update(email).digest("hex");
+}
+
+function sealMapping(email, anonId) {
+  const key = Buffer.from(SEALED_MAPPING_KEY, "hex");
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const plaintext = JSON.stringify({ email, anon_id: anonId });
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  return { iv: iv.toString("hex"), ciphertext: ciphertext.toString("hex"), tag: cipher.getAuthTag().toString("hex") };
+}
+
+function unsealMapping(sealed) {
+  const key = Buffer.from(SEALED_MAPPING_KEY, "hex");
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(sealed.iv, "hex"));
+  decipher.setAuthTag(Buffer.from(sealed.tag, "hex"));
+  const plaintext = Buffer.concat([decipher.update(Buffer.from(sealed.ciphertext, "hex")), decipher.final()]);
+  return JSON.parse(plaintext.toString("utf8"));
+}
+
+function signResearchToken(anonId) {
+  return jwt.sign({ anon_id: anonId, type: "research" }, JWT_SECRET);
+}
 
 /** Admin emails that can manage the allowlist */
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "grisha@henkaku.center,contact@gszep.com")
@@ -255,7 +283,29 @@ app.post("/auth/verify-code", async (req, res) => {
     { expiresIn: "90d" }
   );
 
-  res.json({ status: "ok", token, email: normalized });
+  // Issue research token (sealed mapping)
+  let researchToken;
+  if (SEALED_MAPPING_KEY) {
+    try {
+      const docId = hashEmail(normalized);
+      const sealedRef = firestore.doc(`sealed_mapping/${docId}`);
+      const sealedDoc = await sealedRef.get();
+      let anonId;
+
+      if (sealedDoc.exists) {
+        anonId = unsealMapping(sealedDoc.data()).anon_id;
+      } else {
+        anonId = randomUUID();
+        await sealedRef.set({ ...sealMapping(normalized, anonId), updated_at: new Date() });
+      }
+
+      researchToken = signResearchToken(anonId);
+    } catch (err) {
+      console.error("Research token issuance failed:", err.message);
+    }
+  }
+
+  res.json({ status: "ok", token, email: normalized, ...(researchToken && { research_token: researchToken }) });
 });
 
 /* ── Ingest endpoint ── */
@@ -268,12 +318,24 @@ app.post("/ingest", async (req, res) => {
     return res.status(401).json({ error: err.message });
   }
 
-  const { project_path, session_id, file_name, offset, file_offset, lines } = req.body;
+  const { project_path, session_id, file_name, offset, file_offset, lines, research_token } = req.body;
 
   if (!project_path || !session_id || !file_name || offset == null || file_offset == null || !Array.isArray(lines)) {
     return res.status(400).json({
       error: "Missing required fields: project_path, session_id, file_name, offset, file_offset, lines",
     });
+  }
+
+  // Validate research token if provided (for future research.logs writes)
+  if (research_token && SEALED_MAPPING_KEY) {
+    try {
+      const payload = jwt.verify(research_token, JWT_SECRET);
+      if (payload.type !== "research" || !payload.anon_id) {
+        console.warn("Invalid research token payload from", participantId);
+      }
+    } catch {
+      console.warn("Invalid research token from", participantId);
+    }
   }
 
   if (lines.length === 0) {
@@ -593,14 +655,13 @@ app.post("/portal/consent", async (req, res) => {
     changed_at: new Date(),
   };
 
-  if (research_use && !existing.anon_id) {
-    update.anon_id = randomUUID();
+  if (research_use && !existing.consented_at) {
     update.consented_at = new Date();
   }
 
   await ref.set({ ...existing, ...update }, { merge: true });
 
-  res.json({ status: "ok", research_use, anon_id: existing.anon_id || update.anon_id || null });
+  res.json({ status: "ok", research_use });
 });
 
 /** GET /portal/survey — get survey status and any existing responses */
