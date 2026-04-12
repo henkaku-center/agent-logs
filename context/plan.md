@@ -565,13 +565,13 @@ Educational-use cannot be "withdrawn" independently. A student who does not want
 
 ### Research-use (research)
 
-Research-use is an explicit opt-in via the web portal. It controls whether anonymized copies of shared session logs go to the research system. Research-use applies globally — all shared projects, coursework and non-coursework alike. The incentive to opt in is the meta-insights report, which is only visible to Research-use participants.
+Research-use is an explicit opt-in via the web portal. It controls whether anonymized copies of shared session logs go to the research system. Research-use applies globally — all shared projects, coursework and non-coursework alike. The incentive to opt in is the Cohort Insights report, which is only visible to Research-use participants.
 
 **Opt-in**: the student toggles Research-use on in the web portal. This triggers a transfer of all their existing shared session logs (from date of consent onward) to the research dataset, with Phase 1 structural anonymization applied. New logs are anonymized and copied to the research dataset at ingestion time going forward.
 
-**Opt-out**: the student toggles Research-use off in the web portal at any time. New logs stop being copied to the research dataset immediately. The meta-insights report becomes inaccessible. Existing research data rows are **flagged as revoked** (`revoked = true`) and become immediately non-queryable — all research queries use authorized views that filter `WHERE revoked = false`. The student sees the effect of their opt-out right away.
+**Opt-out**: the student toggles Research-use off in the web portal at any time. New logs stop being copied to the research dataset immediately. The Cohort Insights report becomes inaccessible. Existing research data rows are **flagged as revoked** (`revoked = true`) and become immediately non-queryable — all research queries use authorized views that filter `WHERE revoked = false`. The student sees the effect of their opt-out right away.
 
-If the student toggles Research-use back on before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset. No data was lost and no redundant transfer is needed.
+If the student toggles Research-use back on before course end, the revoked flag is cleared — existing research data becomes queryable again, the Cohort Insights report becomes accessible, and new logs resume flowing to the research dataset. No data was lost and no redundant transfer is needed.
 
 **Final deletion**: at 1 month post-course, all rows still flagged `revoked = true` are permanently deleted along with the mapping table. Students who are still opted in retain their research data for the 5-year research retention period.
 
@@ -675,7 +675,7 @@ After the withdrawal window closes, the only mechanism for removing research dat
 
 ### Requirements
 
-The consent form explains: what session logs are, how they are used under Educational-use (instruction) and Research-use (research), that Educational-use is part of the course and does not require separate consent, that Research-use is voluntary with no effect on grades, what the personal and meta-insights reports provide, how identity is protected, how and when to withdraw, what happens to data upon withdrawal, how long data is retained, and contact information for the PI and ethics committee. Available in Japanese and English. Plain language.
+The consent form explains: what session logs are, how they are used under Educational-use (instruction) and Research-use (research), that Educational-use is part of the course and does not require separate consent, that Research-use is voluntary with no effect on grades, what the personal and Cohort Insights reports provide, how identity is protected, how and when to withdraw, what happens to data upon withdrawal, how long data is retained, and contact information for the PI and ethics committee. Available in Japanese and English. Plain language.
 
 The student's anonymous identifier is generated at CLI login time (not at consent acknowledgement) and stored in a signed research token on the student's machine. The email-to-anon_id mapping is stored encrypted in Firestore — the server never stores this link in plaintext. Both researcher and student retain a copy of the signed consent form. Authentication for all portal actions (withdrawal, insight reports, delete requests) uses email verification (magic code flow) — the same email used for the student's Claude Enterprise seat. Accounts are retained for 1 month after the course ends to match the withdrawal window.
 
@@ -739,7 +739,7 @@ Consent records are retained for five years from end of the research project, pe
 
 #### Late opt-in
 
-Students may opt into Research-use at any point during the semester via the web portal. The meta-insights report becomes visible immediately. On opt-in, the system:
+Students may opt into Research-use at any point during the semester via the web portal. The Cohort Insights report becomes visible immediately. On opt-in, the system:
 
 1. Records the consent timestamp
 2. Triggers a backfill: all existing shared session logs (from the consent date onward) are anonymized (Phase 1) and copied from the course dataset to the research dataset
@@ -755,11 +755,11 @@ Logs generated before the consent date remain in the course dataset only (Educat
 4. System confirms: "New logs will no longer be shared for research. Your existing research data is now hidden from all queries. You can re-enable Research-use at any time during the course to restore access. Data still flagged as revoked 1 month after course end will be permanently deleted."
 5. Existing research data rows flagged `revoked = true` — immediately non-queryable via authorized views
 6. New logs stop being copied to the research dataset immediately
-7. Meta-insights report becomes inaccessible
+7. Cohort Insights report becomes inaccessible
 8. Consent record status set to `opted_out` with timestamp
-9. No effect on course dataset data or personal insights report
+9. No effect on course dataset data or Personal Insights report
 
-If the student re-opts in before course end, the revoked flag is cleared — existing research data becomes queryable again, the meta-insights report becomes accessible, and new logs resume flowing to the research dataset.
+If the student re-opts in before course end, the revoked flag is cleared — existing research data becomes queryable again, the Cohort Insights report becomes accessible, and new logs resume flowing to the research dataset.
 
 After the mapping table is deleted (1 month post-course), Research-use changes are no longer possible — the system cannot determine which anonymous ID belongs to which student. Rows still flagged `revoked = true` at that point are permanently deleted. Students are informed of this deadline at consent time and reminded at end of course.
 
@@ -777,7 +777,7 @@ The portal includes a periodic question on other AI tool usage (which tools, app
 
 Students receive insight reports as static HTML files, generated from their session log data. There is no live analytics dashboard — reports are generated on demand or on a schedule, and served as downloadable/viewable HTML.
 
-### Personal insights report (all students)
+### Personal Insights report (all students)
 
 Available to any student who has shared at least one project, regardless of Research-use participation. Generated from the student's own data in the course dataset.
 
@@ -792,7 +792,7 @@ The report is generated by running `/insights` on the student's session data. Co
 
 This report uses only the student's own data. No cohort data, no comparisons.
 
-### Meta-insights report (Research-use only)
+### Cohort Insights report (Research-use only)
 
 Available only to students who have opted in to Research-use. Generated from the anonymized research dataset, combining the student's own patterns with aggregate cohort statistics. **This report is the primary incentive for Research-use participation** — it provides context that no individual student could derive from their own data alone.
 
@@ -812,7 +812,7 @@ Reports are static HTML files. They can be:
 - Generated on a schedule (e.g., biweekly) and made available for download
 - Generated locally if the student has the tooling (stretch goal)
 
-Reports are served through the web portal, authenticated with the student's Google account (same as their Enterprise seat). Personal reports pull from the course dataset. Meta-insights reports pull from the research dataset (anonymous data) plus the student's own identified data for the personal overlay.
+Reports are served through the web portal, authenticated with the student's Google account (same as their Enterprise seat). Personal reports pull from the course dataset. Cohort Insights reports pull from the research dataset (anonymous data) plus the student's own identified data for the personal overlay.
 
 ---
 
@@ -824,8 +824,8 @@ Single web application serving both students and researchers.
 
 - **My projects**: list of shared and withdrawn projects, consent status for each (read-only — project consent is managed via CLI)
 - **My sessions**: browse synced sessions by project, with timestamps and summary stats (message count, duration, tokens)
-- **Personal insights**: view/download personal insights report — session patterns, tool usage, trends over time. Available to all students who share at least one project.
-- **Meta-insights** (Research-use only): view/download meta-insights report — the student's patterns placed in context of the cohort distribution across courses. This is the primary incentive for Research-use participation: context that no individual student could derive alone.
+- **Personal Insights**: view/download Personal Insights report — session patterns, tool usage, trends over time. Available to all students who share at least one project.
+- **Cohort Insights** (Research-use only): view/download Cohort Insights report — the student's patterns placed in context of the cohort distribution across courses. This is the primary incentive for Research-use participation: context that no individual student could derive alone.
 - **Delete requests**: submit new requests, view status of pending requests
 - **Study consent**: Research-use opt-in/opt-out, global withdrawal
 - **Sync status**: last sync time, pending data, hook health
@@ -868,8 +868,8 @@ Build out the student-facing and researcher-facing features described in this do
 8. Web portal — student views (projects, sessions, consent, delete requests, sync status) and researcher views (delete queue, sync monitoring, consent overview)
 9. Research-use opt-in/opt-out flow via web portal — opt-out flags research rows as `revoked` (non-queryable via authorized views), re-opt-in clears the flag
 10. BigQuery authorized views — all research queries go through views that filter `WHERE revoked = false`
-11. Personal insights report generation
-12. Meta-insights report generation (Research-use, cohort context)
+11. Personal Insights report generation
+12. Cohort Insights report generation (Research-use, cohort context)
 
 ### Milestone 3: security, privacy, and compliance
 
