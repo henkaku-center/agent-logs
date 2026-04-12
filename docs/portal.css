@@ -287,6 +287,14 @@ details[open] > .session-project-header::before {
   font-size: 14px;
 }
 
+.session-revoked {
+  opacity: 0.5;
+}
+
+.session-revoked .session-title {
+  text-decoration: line-through;
+}
+
 .session-title {
   font-weight: 700;
   margin-bottom: 2px;

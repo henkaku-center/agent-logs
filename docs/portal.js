@@ -344,12 +344,16 @@ function renderSessions(container, hasMore) {
             const title = s.title || "Untitled session";
             const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
             const ago = timeAgo(s.last_timestamp);
+            const revokedClass = s.revoked ? " session-revoked" : "";
+            const toggleLabel = s.revoked ? "Restore" : "Withdraw";
+            const toggleClass = s.revoked ? "btn-primary" : "btn-danger";
             return `
-              <div class="session-row">
-                <div>
+              <div class="session-row${revokedClass}">
+                <div style="flex:1">
                   <div class="session-title">${escapeHtml(truncated)}</div>
-                  <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses</div>
+                  <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses${s.revoked ? ' · <span style="color:#C62828">withdrawn</span>' : ""}</div>
                 </div>
+                <button class="btn ${toggleClass}" style="font-size:12px;padding:4px 12px" onclick="toggleRevoke('${escapeHtml(project.project_path)}','${s.session_id}',${!s.revoked})">${toggleLabel}</button>
               </div>
             `;
           }).join("")}
@@ -756,6 +760,23 @@ function renderSurveyForm(surveyId, responses) {
     </form>
   `;
 }
+
+window.toggleRevoke = async function(projectPath, sessionId, revoked) {
+  try {
+    await apiFetch("/portal/revoke", {
+      method: "POST",
+      body: { project_path: projectPath, session_id: sessionId, revoked },
+    });
+    // Update local state and re-render
+    for (const sessions of Object.values(allSessionProjects)) {
+      const s = sessions.find((s) => s.session_id === sessionId);
+      if (s) { s.revoked = revoked; break; }
+    }
+    renderSessions(document.getElementById("sessions-container"), false);
+  } catch (err) {
+    alert(`Failed: ${err.message}`);
+  }
+};
 
 window.scrollToSurveyForm = function() {
   document.getElementById("survey-form")?.scrollIntoView({ behavior: "smooth", block: "start" });

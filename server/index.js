@@ -521,7 +521,8 @@ app.get("/portal/sessions", async (req, res) => {
                      MAX(timestamp) AS last_timestamp,
                      COUNT(*) AS record_count,
                      COUNTIF(record_type='user') AS user_count,
-                     COUNTIF(record_type='assistant') AS assistant_count
+                     COUNTIF(record_type='assistant') AS assistant_count,
+                     LOGICAL_OR(COALESCE(revoked, FALSE)) AS revoked
               FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
               WHERE participant_id = @participant_id
               GROUP BY project_path, session_id
@@ -554,6 +555,7 @@ app.get("/portal/sessions", async (req, res) => {
         record_count: row.record_count,
         user_count: row.user_count,
         assistant_count: row.assistant_count,
+        revoked: row.revoked || false,
       });
     }
 
@@ -736,6 +738,35 @@ app.post("/portal/survey/sign", async (req, res) => {
 
   await ref.update({ signed_at: new Date(), signed_by: email });
   res.json({ status: "ok", signed_at: new Date().toISOString() });
+});
+
+/** POST /portal/revoke — toggle revoked flag on session data */
+app.post("/portal/revoke", async (req, res) => {
+  const email = requireAuth(req, res);
+  if (!email) return;
+
+  const { project_path, session_id, revoked } = req.body;
+  if (!project_path || typeof revoked !== "boolean") {
+    return res.status(400).json({ error: "Missing project_path or revoked boolean" });
+  }
+
+  try {
+    const whereClause = session_id
+      ? `participant_id = @email AND project_path = @project_path AND session_id = @session_id`
+      : `participant_id = @email AND project_path = @project_path`;
+    const params = { email, project_path };
+    if (session_id) params.session_id = session_id;
+
+    await bigquery.query({
+      query: `UPDATE \`${PROJECT_ID}.${DATASET}.${TABLE}\` SET revoked = @revoked WHERE ${whereClause}`,
+      params: { ...params, revoked },
+    });
+
+    res.json({ status: "ok", revoked });
+  } catch (err) {
+    console.error("Revoke error:", err);
+    res.status(500).json({ error: "Failed to update revocation status" });
+  }
 });
 
 /** POST /portal/delete-request — request data deletion */
