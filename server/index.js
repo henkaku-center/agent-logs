@@ -3,7 +3,7 @@ import { BigQuery } from "@google-cloud/bigquery";
 import { Firestore } from "@google-cloud/firestore";
 import jwt from "jsonwebtoken";
 import { google } from "googleapis";
-import { randomInt, randomUUID, createHash, createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { randomInt, randomUUID, createHash, createHmac, createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 const app = express();
 app.use(express.json({ limit: "5mb" }));
@@ -27,6 +27,7 @@ const PROJECT_ID = process.env.GCP_PROJECT || "agent-logging";
 const DATASET = "course";
 const TABLE = "logs";
 const COWORK_TABLE = "cowork_events";
+const RESEARCH_TABLE = "research_logs";
 const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production";
 const GMAIL_SENDER = process.env.GMAIL_SENDER || "claude@chibatech.dev";
 const OTLP_SECRET = process.env.OTLP_SECRET || "change-me-otlp-secret";
@@ -57,6 +58,39 @@ function unsealMapping(sealed) {
 
 function signResearchToken(anonId) {
   return jwt.sign({ anon_id: anonId, type: "research" }, JWT_SECRET);
+}
+
+/* ── Phase 1 structural anonymization ── */
+
+function anonymizeRecord(jsonString) {
+  const record = JSON.parse(jsonString);
+
+  if (record.cwd) {
+    record.cwd = record.cwd.replace(/\/home\/[^/]+\//, "/home/anon/");
+  }
+
+  if (record.gitBranch) {
+    record.gitBranch = record.gitBranch.replace(/^[^/]+\//, "anon/");
+  }
+
+  if (record.requestId && SEALED_MAPPING_KEY) {
+    record.requestId = createHmac("sha256", SEALED_MAPPING_KEY)
+      .update(record.requestId).digest("hex").slice(0, 20);
+  }
+
+  if (record.message?.content && Array.isArray(record.message.content)) {
+    for (const block of record.message.content) {
+      if (block.type === "tool_use" && block.input) {
+        for (const [key, val] of Object.entries(block.input)) {
+          if (typeof val === "string") {
+            block.input[key] = val.replace(/\/home\/[^/]+\//g, "/home/anon/");
+          }
+        }
+      }
+    }
+  }
+
+  return JSON.stringify(record);
 }
 
 /** Admin emails that can manage the allowlist */
@@ -326,11 +360,14 @@ app.post("/ingest", async (req, res) => {
     });
   }
 
-  // Validate research token if provided (for future research.logs writes)
+  // Verify research token upfront (used after course.logs write)
+  let researchPayload = null;
   if (research_token && SEALED_MAPPING_KEY) {
     try {
       const payload = jwt.verify(research_token, JWT_SECRET);
-      if (payload.type !== "research" || !payload.anon_id) {
+      if (payload.type === "research" && payload.anon_id) {
+        researchPayload = payload;
+      } else {
         console.warn("Invalid research token payload from", participantId);
       }
     } catch {
@@ -412,6 +449,34 @@ app.post("/ingest", async (req, res) => {
             });
             break;
           }
+        }
+      }
+
+      // Dual-write to research.logs if participant opted in
+      if (researchPayload) {
+        try {
+          const consentDoc = await firestore.doc(`consent/${participantId}`).get();
+          if (consentDoc.exists && consentDoc.data().research_use) {
+            const projectHash = createHash("sha256").update(project_path).digest("hex");
+            const researchRows = linesToInsert.map((line) => {
+              let parsed;
+              try { parsed = JSON.parse(line); } catch { parsed = {}; }
+              return {
+                anon_id: researchPayload.anon_id,
+                project_hash: projectHash,
+                session_id,
+                file_name,
+                record_type: parsed.type || "unknown",
+                timestamp: parsed.timestamp ? new Date(parsed.timestamp).toISOString() : new Date().toISOString(),
+                version: parsed.version || null,
+                data: anonymizeRecord(line),
+                revoked: false,
+              };
+            });
+            await bigquery.dataset(DATASET).table(RESEARCH_TABLE).insert(researchRows);
+          }
+        } catch (err) {
+          console.error("Research logs write failed:", err.message);
         }
       }
     }
@@ -992,7 +1057,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-export { app };
+export { app, anonymizeRecord };
 
 const PORT = process.env.PORT || 8080;
 if (!process.env.NODE_ENV?.startsWith("test")) {

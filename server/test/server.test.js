@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 // In-memory stores
 const firestoreData = {};
 const bigqueryRows = [];
+const researchRows = [];
 let bigqueryQueryResults = [];
 
 function firestoreGet(path) {
@@ -86,9 +87,10 @@ const mockFirestore = {
 // Mock BigQuery
 const mockBigQuery = {
   dataset: () => ({
-    table: () => ({
+    table: (name) => ({
       insert: async (rows) => {
-        bigqueryRows.push(...rows);
+        if (name === "research_logs") researchRows.push(...rows);
+        else bigqueryRows.push(...rows);
       },
     }),
   }),
@@ -134,7 +136,7 @@ process.env.ADMIN_EMAILS = "admin@test.com";
 process.env.OTLP_SECRET = "otlp-test-secret";
 process.env.SEALED_MAPPING_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-const { app, resetSurveyCache } = await import("../../server/index.js");
+const { app, resetSurveyCache, anonymizeRecord } = await import("../../server/index.js");
 
 // ── Test helpers ──
 
@@ -163,6 +165,7 @@ after(async () => {
 beforeEach(() => {
   for (const key of Object.keys(firestoreData)) delete firestoreData[key];
   bigqueryRows.length = 0;
+  researchRows.length = 0;
   bigqueryQueryResults = [];
   resetSurveyCache();
 });
@@ -1278,5 +1281,254 @@ describe("CORS", () => {
       headers: { Origin: "https://agent-logs.chibatech.dev" },
     });
     assert.equal(resp.status, 204);
+  });
+});
+
+// ── anonymizeRecord ──
+
+describe("anonymizeRecord", () => {
+  it("scrubs cwd path", () => {
+    const input = JSON.stringify({ cwd: "/home/tanaka/coursework/web3" });
+    const result = JSON.parse(anonymizeRecord(input));
+    assert.equal(result.cwd, "/home/anon/coursework/web3");
+  });
+
+  it("scrubs gitBranch username prefix", () => {
+    const input = JSON.stringify({ gitBranch: "tanaka/feature-x" });
+    const result = JSON.parse(anonymizeRecord(input));
+    assert.equal(result.gitBranch, "anon/feature-x");
+  });
+
+  it("leaves branchless gitBranch unchanged", () => {
+    const input = JSON.stringify({ gitBranch: "main" });
+    const result = JSON.parse(anonymizeRecord(input));
+    assert.equal(result.gitBranch, "main");
+  });
+
+  it("hashes requestId with HMAC", () => {
+    const input = JSON.stringify({ requestId: "req-abc-123" });
+    const result = JSON.parse(anonymizeRecord(input));
+    assert.notEqual(result.requestId, "req-abc-123");
+    assert.equal(result.requestId.length, 20);
+    // Deterministic: same input → same output
+    const result2 = JSON.parse(anonymizeRecord(input));
+    assert.equal(result.requestId, result2.requestId);
+  });
+
+  it("scrubs paths in tool_use input blocks", () => {
+    const input = JSON.stringify({
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            input: {
+              file_path: "/home/tanaka/project/src/main.js",
+              command: "cat /home/tanaka/project/README.md",
+            },
+          },
+        ],
+      },
+    });
+    const result = JSON.parse(anonymizeRecord(input));
+    const toolInput = result.message.content[0].input;
+    assert.equal(toolInput.file_path, "/home/anon/project/src/main.js");
+    assert.equal(toolInput.command, "cat /home/anon/project/README.md");
+  });
+
+  it("leaves non-tool_use content blocks unchanged", () => {
+    const input = JSON.stringify({
+      message: {
+        content: [
+          { type: "text", text: "hello /home/tanaka/test" },
+        ],
+      },
+    });
+    const result = JSON.parse(anonymizeRecord(input));
+    assert.equal(result.message.content[0].text, "hello /home/tanaka/test");
+  });
+
+  it("handles records with no scrubable fields", () => {
+    const input = JSON.stringify({ type: "system", sessionId: "abc-123" });
+    const result = JSON.parse(anonymizeRecord(input));
+    assert.equal(result.type, "system");
+    assert.equal(result.sessionId, "abc-123");
+  });
+});
+
+// ── Research logs dual-write ──
+
+describe("research logs dual-write", () => {
+  function makeResearchToken(anonId) {
+    return jwt.sign({ anon_id: anonId, type: "research" }, JWT_SECRET);
+  }
+
+  it("writes to research_logs when research_use is true", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = makeResearchToken("anon-abc");
+    firestoreData["consent/student@chibatech.dev"] = { research_use: true };
+
+    const line = JSON.stringify({
+      type: "user",
+      timestamp: "2026-01-01T00:00:00Z",
+      cwd: "/home/student/project",
+      message: { content: "hello" },
+    });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    const { status, data } = await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/home/student/project",
+        session_id: "rs1", file_name: "rs1.jsonl",
+        offset: 0, file_offset: fileOffset,
+        lines: [line], research_token: researchToken,
+      },
+    });
+
+    assert.equal(status, 200);
+    assert.equal(data.lines_accepted, 1);
+    // course.logs written
+    assert.equal(bigqueryRows.length, 1);
+    assert.equal(bigqueryRows[0].participant_id, "student@chibatech.dev");
+    // research.logs written
+    assert.equal(researchRows.length, 1);
+    assert.equal(researchRows[0].anon_id, "anon-abc");
+    assert.ok(researchRows[0].project_hash);
+    assert.notEqual(researchRows[0].project_hash, "/home/student/project");
+    // cwd should be anonymized in research data
+    const researchData = JSON.parse(researchRows[0].data);
+    assert.equal(researchData.cwd, "/home/anon/project");
+    assert.equal(researchRows[0].revoked, false);
+  });
+
+  it("skips research_logs when research_use is false", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = makeResearchToken("anon-abc");
+    firestoreData["consent/student@chibatech.dev"] = { research_use: false };
+
+    const line = JSON.stringify({ type: "user", message: { content: "hi" } });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/test", session_id: "rs2", file_name: "rs2.jsonl",
+        offset: 0, file_offset: fileOffset,
+        lines: [line], research_token: researchToken,
+      },
+    });
+
+    assert.equal(bigqueryRows.length, 1);
+    assert.equal(researchRows.length, 0);
+  });
+
+  it("skips research_logs when no consent record exists", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = makeResearchToken("anon-abc");
+
+    const line = JSON.stringify({ type: "user", message: { content: "hi" } });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/test", session_id: "rs3", file_name: "rs3.jsonl",
+        offset: 0, file_offset: fileOffset,
+        lines: [line], research_token: researchToken,
+      },
+    });
+
+    assert.equal(bigqueryRows.length, 1);
+    assert.equal(researchRows.length, 0);
+  });
+
+  it("skips research_logs when no research_token provided", async () => {
+    const token = makeToken("student@chibatech.dev");
+    firestoreData["consent/student@chibatech.dev"] = { research_use: true };
+
+    const line = JSON.stringify({ type: "user", message: { content: "hi" } });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/test", session_id: "rs4", file_name: "rs4.jsonl",
+        offset: 0, file_offset: fileOffset,
+        lines: [line],
+      },
+    });
+
+    assert.equal(bigqueryRows.length, 1);
+    assert.equal(researchRows.length, 0);
+  });
+
+  it("anonymizes tool_use paths in research data", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = makeResearchToken("anon-xyz");
+    firestoreData["consent/student@chibatech.dev"] = { research_use: true };
+
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-01-01T00:00:00Z",
+      requestId: "req-123",
+      message: {
+        content: [
+          { type: "tool_use", input: { file_path: "/home/student/src/app.js", command: "ls /home/student/" } },
+        ],
+      },
+    });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/home/student/project",
+        session_id: "rs5", file_name: "rs5.jsonl",
+        offset: 0, file_offset: fileOffset,
+        lines: [line], research_token: researchToken,
+      },
+    });
+
+    assert.equal(researchRows.length, 1);
+    const rd = JSON.parse(researchRows[0].data);
+    assert.equal(rd.message.content[0].input.file_path, "/home/anon/src/app.js");
+    assert.equal(rd.message.content[0].input.command, "ls /home/anon/");
+    // requestId should be hashed
+    assert.notEqual(rd.requestId, "req-123");
+    assert.equal(rd.requestId.length, 20);
+  });
+
+  it("produces consistent project_hash for same project_path", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = makeResearchToken("anon-hash");
+    firestoreData["consent/student@chibatech.dev"] = { research_use: true };
+
+    const line1 = JSON.stringify({ type: "user", timestamp: "2026-01-01T00:00:00Z", message: { content: "a" } });
+    const line2 = JSON.stringify({ type: "user", timestamp: "2026-01-01T00:00:01Z", message: { content: "b" } });
+    const off1 = Buffer.byteLength(line1, "utf8") + 1;
+    const off2 = off1 + Buffer.byteLength(line2, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/home/student/project",
+        session_id: "rs6", file_name: "rs6.jsonl",
+        offset: 0, file_offset: off1,
+        lines: [line1], research_token: researchToken,
+      },
+    });
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/home/student/project",
+        session_id: "rs6", file_name: "rs6.jsonl",
+        offset: off1, file_offset: off2,
+        lines: [line2], research_token: researchToken,
+      },
+    });
+
+    assert.equal(researchRows.length, 2);
+    assert.equal(researchRows[0].project_hash, researchRows[1].project_hash);
+    assert.equal(researchRows[0].project_hash.length, 64); // sha256 hex
   });
 });
