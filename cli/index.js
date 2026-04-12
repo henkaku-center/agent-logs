@@ -137,6 +137,44 @@ switch (command) {
     break;
   }
 
+  case "opt-in": {
+    const projects = readProjects();
+    if (projects.research_use) {
+      console.log("Research-use is already enabled.");
+      break;
+    }
+    try {
+      const { authFetch } = await import("./auth.js");
+      await authFetch("/portal/consent", "POST", { research_use: true });
+      projects.research_use = true;
+      writeProjects(projects);
+      console.log("Research-use enabled. Anonymised session logs will be used for research.");
+    } catch (err) {
+      console.error(`Failed: ${err.message}`);
+      process.exit(1);
+    }
+    break;
+  }
+
+  case "opt-out": {
+    const projects = readProjects();
+    if (!projects.research_use) {
+      console.log("Research-use is already disabled.");
+      break;
+    }
+    try {
+      const { authFetch } = await import("./auth.js");
+      await authFetch("/portal/consent", "POST", { research_use: false });
+      projects.research_use = false;
+      writeProjects(projects);
+      console.log("Research-use disabled. Session logs will only be used for course purposes.");
+    } catch (err) {
+      console.error(`Failed: ${err.message}`);
+      process.exit(1);
+    }
+    break;
+  }
+
   case "logout": {
     const token = readToken();
     if (!token?.email) {
@@ -256,13 +294,15 @@ switch (command) {
     // stdout → injected into Claude's context
     console.log([
       `[agent-logs] Session logs for this project are ${status}.`,
-      shared ? `Participant: ${projects.participant_id}. Research-use: ${projects.research_use ? "opted in" : "not enrolled"}.` : "",
+      `Participant: ${projects.participant_id}. Research-use: ${projects.research_use ? "opted in" : "not enrolled"}.`,
       `Available commands (run via Bash tool):`,
       `  agent-logs consent   — start sharing logs for the current project`,
       `  agent-logs withdraw  — stop sharing logs for the current project`,
+      `  agent-logs opt-in    — enable research-use (anonymised logs for research, global)`,
+      `  agent-logs opt-out   — disable research-use (global)`,
       `  agent-logs doctor    — check configuration and connectivity`,
-      `If the participant asks to change sharing, run the appropriate command.`,
-    ].filter(Boolean).join("\n"));
+      `If the participant asks to change sharing or research consent, run the appropriate command.`,
+    ].join("\n"));
     break;
   }
 
