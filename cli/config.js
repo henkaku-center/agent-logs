@@ -14,45 +14,40 @@ export function ensureConfigDir() {
   mkdirSync(CONFIG_DIR, { recursive: true });
 }
 
-/** Read projects.yaml (simple key-value parser, no yaml dep needed for POC) */
+/**
+ * Read projects config (JSON).
+ * shared: array of { path, consented_at } objects
+ * withdrawn: array of path strings
+ */
 export function readProjects() {
   if (!existsSync(PROJECTS_FILE)) {
     return { participant_id: null, research_use: false, shared: [], withdrawn: [] };
   }
-  const text = readFileSync(PROJECTS_FILE, "utf8");
-  const config = { participant_id: null, research_use: false, shared: [], withdrawn: [] };
-  let currentList = null;
-
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("participant_id:")) {
-      config.participant_id = trimmed.slice("participant_id:".length).trim();
-    } else if (trimmed.startsWith("research_use:")) {
-      config.research_use = trimmed.slice("research_use:".length).trim() === "true";
-    } else if (trimmed === "shared:") {
-      currentList = "shared";
-    } else if (trimmed === "withdrawn:") {
-      currentList = "withdrawn";
-    } else if (trimmed.startsWith("- ") && currentList) {
-      config[currentList].push(trimmed.slice(2).trim());
-    }
+  try {
+    const config = JSON.parse(readFileSync(PROJECTS_FILE, "utf8"));
+    config.shared = config.shared || [];
+    config.withdrawn = config.withdrawn || [];
+    return config;
+  } catch {
+    return { participant_id: null, research_use: false, shared: [], withdrawn: [] };
   }
-  return config;
 }
 
-/** Write projects.yaml */
+/** Write projects config (JSON) */
 export function writeProjects(config) {
   ensureConfigDir();
-  const lines = [
-    `participant_id: ${config.participant_id || ""}`,
-    `research_use: ${config.research_use}`,
-    "shared:",
-    ...config.shared.map((p) => `  - ${p}`),
-    "withdrawn:",
-    ...config.withdrawn.map((p) => `  - ${p}`),
-    "",
-  ];
-  writeFileSync(PROJECTS_FILE, lines.join("\n"));
+  writeFileSync(PROJECTS_FILE, JSON.stringify(config, null, 2));
+}
+
+/** Check if a path is in the shared list */
+export function isShared(projects, path) {
+  return projects.shared.some((s) => s.path === path);
+}
+
+/** Get consented_at timestamp for a shared path (or null) */
+export function getConsentedAt(projects, path) {
+  const entry = projects.shared.find((s) => s.path === path);
+  return entry?.consented_at || null;
 }
 
 /** Read cursors.json with atomic-write-safe fallback */

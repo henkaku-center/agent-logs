@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, relative } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
-import { readProjects, writeProjects, readCursors, writeCursors, readToken, writeLastSync } from "./config.js";
+import { readProjects, writeProjects, isShared, getConsentedAt, readCursors, writeCursors, readToken, writeLastSync } from "./config.js";
 import { getToken } from "./auth.js";
 
 const CLAUDE_DIR = join(homedir(), ".claude", "projects");
@@ -117,7 +117,8 @@ export async function sync() {
   let totalSkipped = 0;
   let errors = [];
 
-  for (const projectPath of projects.shared) {
+  for (const { path: projectPath, consented_at } of projects.shared) {
+    const consentedAtMs = consented_at ? new Date(consented_at).getTime() : 0;
     const projectDirName = pathToProjectDir(projectPath);
     const claudeProjectDir = join(CLAUDE_DIR, projectDirName);
     const jsonlFiles = discoverJsonlFiles(claudeProjectDir);
@@ -166,6 +167,8 @@ export async function sync() {
           continue; // Skip unparseable lines
         }
         if (!ALLOWED_TYPES.has(parsed.type)) continue;
+        // Only sync lines created after consent was granted
+        if (parsed.timestamp && new Date(parsed.timestamp).getTime() < consentedAtMs) continue;
         const stripped = stripToolResults(parsed);
         filteredLines.push(JSON.stringify(stripped));
       }

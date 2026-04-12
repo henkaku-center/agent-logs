@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readProjects, writeProjects, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
+import { readProjects, writeProjects, isShared, getConsentedAt, ensureConfigDir, readLastSync, readToken, writeToken } from "./config.js";
 import { INGESTION_URL } from "./constants.js";
 import { login, getToken, authFetch } from "./auth.js";
 import { registerHooks, unregisterHooks, hooksRegistered } from "./hooks.js";
@@ -116,9 +116,8 @@ switch (command) {
     const cwd = process.cwd();
     const projects = readProjects();
     projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
-    if (!projects.shared.includes(cwd)) {
-      projects.shared.push(cwd);
-    }
+    projects.shared = projects.shared.filter((s) => s.path !== cwd);
+    projects.shared.push({ path: cwd, consented_at: new Date().toISOString() });
     writeProjects(projects);
     console.log(`Sharing enabled for: ${cwd}`);
     break;
@@ -127,7 +126,7 @@ switch (command) {
   case "withdraw": {
     const cwd = process.cwd();
     const projects = readProjects();
-    projects.shared = projects.shared.filter((p) => p !== cwd);
+    projects.shared = projects.shared.filter((s) => s.path !== cwd);
     if (!projects.withdrawn.includes(cwd)) {
       projects.withdrawn.push(cwd);
     }
@@ -234,7 +233,7 @@ switch (command) {
     } catch {}
 
     // Already decided — skip
-    if (projects.shared.includes(cwd) || projects.withdrawn.includes(cwd)) break;
+    if (isShared(projects, cwd) || projects.withdrawn.includes(cwd)) break;
 
     // Unknown folder — show consent dialog
     const cols = process.stdout.columns || 89;
@@ -261,12 +260,13 @@ switch (command) {
     process.stdout.write(`\x1b[${totalLines}A\x1b[J`);
 
     if (choice === true) {
-      projects.shared.push(cwd);
+      projects.shared = projects.shared.filter((s) => s.path !== cwd);
+      projects.shared.push({ path: cwd, consented_at: new Date().toISOString() });
       projects.withdrawn = projects.withdrawn.filter((p) => p !== cwd);
       writeProjects(projects);
     } else if (choice === false) {
       projects.withdrawn.push(cwd);
-      projects.shared = projects.shared.filter((p) => p !== cwd);
+      projects.shared = projects.shared.filter((s) => s.path !== cwd);
       writeProjects(projects);
     }
     // choice === null (Esc) — do nothing, ask again next time, don't launch claude
@@ -287,7 +287,7 @@ switch (command) {
       }
     } catch {}
 
-    const shared = projects.shared.includes(hookCwd);
+    const shared = isShared(projects, hookCwd);
     const withdrawn = projects.withdrawn.includes(hookCwd);
     const status = shared ? "shared" : withdrawn ? "not shared" : "unknown";
 
@@ -321,7 +321,7 @@ switch (command) {
     const cyanBold = (s) => `\x1b[1;36m${s}\x1b[0m`;
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
-    if (projects.shared.includes(cwd)) {
+    if (isShared(projects, cwd)) {
       const edu = true;
       const res = projects.research_use || false;
       const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
