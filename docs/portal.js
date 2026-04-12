@@ -159,8 +159,18 @@ function showPortal(email) {
 function setupLogin() {
   const sendBtn = document.getElementById("login-send-btn");
   const verifyBtn = document.getElementById("login-verify-btn");
+  const emailInput = document.getElementById("login-email");
 
-  document.getElementById("login-email").addEventListener("keydown", (e) => {
+  // Auto-fill and send if email provided via query param (from CLI consent-required screen)
+  const urlEmail = new URLSearchParams(window.location.search).get("email");
+  if (urlEmail && !getToken()) {
+    emailInput.value = urlEmail;
+    // Clean URL without reloading
+    history.replaceState(null, "", window.location.pathname);
+    setTimeout(() => sendBtn.click(), 100);
+  }
+
+  emailInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); sendBtn.click(); }
   });
 

@@ -220,7 +220,7 @@ switch (command) {
         ` You must sign the informed consent form before using Claude.`,
         ` Visit the portal to read and sign:`,
         ``,
-        `   \x1b[4;36mhttps://agent-logs.chibatech.dev/portal.html\x1b[0m`,
+        `   \x1b[4;36mhttps://agent-logs.chibatech.dev/portal.html?email=${encodeURIComponent(projects.participant_id || "")}\x1b[0m`,
         ``,
         ` ${dim(`Logged in as ${projects.participant_id || ""}`)}`,
         cyan("─".repeat(cols)),
