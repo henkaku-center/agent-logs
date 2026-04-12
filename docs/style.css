@@ -43,6 +43,9 @@ body {
 :lang(ja) {
   font-family: 'Now Gothic GB', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
 }
+:lang(ja) code, :lang(ja) .code-block {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+}
 
 h1, h2, h3 {
   font-weight: 700;
