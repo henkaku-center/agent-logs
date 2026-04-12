@@ -248,7 +248,7 @@ switch (command) {
       ` Session logs from this folder will be shared with`,
       ` Chiba Tech for evaluation and feedback.`,
       ``,
-      ` You can change this anytime with ${blue("agent-logs withdraw")}`,
+      ` You can change this anytime by asking Claude`,
       ` ${dim("└")} ${dim(projects.participant_id)}`,
     ];
     console.log(bannerLines.join("\n"));
