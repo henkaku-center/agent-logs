@@ -397,8 +397,8 @@ async function loadConsent() {
     const data = await apiFetch("/portal/consent");
     const isSigned = !!data.signed_at;
 
-    // Educational-use toggle
-    eduToggle.checked = isSigned || eduToggle.checked;
+    // Educational-use toggle — on by default for unsigned
+    eduToggle.checked = true;
     if (isSigned) {
       eduToggle.disabled = true;
       eduToggle.closest(".consent-toggle-row").classList.add("disabled");
@@ -408,8 +408,8 @@ async function loadConsent() {
       eduToggle.parentNode.replaceChild(newEdu, eduToggle);
     }
 
-    // Research-use toggle
-    resToggle.checked = data.research_use;
+    // Research-use toggle — on by default for unsigned, otherwise use server state
+    resToggle.checked = isSigned ? data.research_use : true;
     if (isSigned) {
       resToggle.disabled = true;
       resToggle.closest(".consent-toggle-row").classList.add("disabled");
