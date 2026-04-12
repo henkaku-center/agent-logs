@@ -714,6 +714,7 @@ app.post("/portal/consent", async (req, res) => {
   const ref = firestore.doc(`consent/${email}`);
   const doc = await ref.get();
   const existing = doc.exists ? doc.data() : {};
+  const wasOptedIn = existing.research_use === true;
 
   const update = {
     research_use,
@@ -726,7 +727,94 @@ app.post("/portal/consent", async (req, res) => {
 
   await ref.set({ ...existing, ...update }, { merge: true });
 
-  res.json({ status: "ok", research_use });
+  // Backfill: when opting IN, copy existing course.logs rows to research.logs
+  let backfill_count = 0;
+  if (research_use && !wasOptedIn && SEALED_MAPPING_KEY) {
+    try {
+      const docId = hashEmail(email);
+      const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
+      if (sealedDoc.exists) {
+        const { anon_id } = unsealMapping(sealedDoc.data());
+        const consentedAt = update.consented_at || existing.consented_at;
+        const sinceDate = consentedAt instanceof Date ? consentedAt : consentedAt?.toDate?.() || new Date(0);
+
+        // Query existing course.logs rows from consent date onward
+        const [rows] = await bigquery.query({
+          query: `SELECT project_path, session_id, file_name, record_type, timestamp, version, data
+                  FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
+                  WHERE participant_id = @email AND timestamp >= @since
+                  ORDER BY timestamp ASC`,
+          params: { email, since: sinceDate.toISOString() },
+        });
+
+        if (rows.length > 0) {
+          // Check which sessions already exist in research.logs to avoid duplicates
+          const sessionIds = [...new Set(rows.map((r) => r.session_id))];
+          const [existing_research] = await bigquery.query({
+            query: `SELECT DISTINCT session_id FROM \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\`
+                    WHERE anon_id = @anon_id AND session_id IN UNNEST(@session_ids)`,
+            params: { anon_id, session_ids: sessionIds },
+          });
+          const existingSessions = new Set(existing_research.map((r) => r.session_id));
+
+          const newRows = rows
+            .filter((r) => !existingSessions.has(r.session_id))
+            .map((r) => ({
+              anon_id,
+              project_hash: createHash("sha256").update(r.project_path).digest("hex"),
+              session_id: r.session_id,
+              file_name: r.file_name,
+              record_type: r.record_type,
+              timestamp: r.timestamp?.value || r.timestamp,
+              version: r.version || null,
+              data: anonymizeRecord(r.data),
+              revoked: false,
+            }));
+
+          if (newRows.length > 0) {
+            await bigquery.dataset(DATASET).table(RESEARCH_TABLE).insert(newRows);
+            backfill_count = newRows.length;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Research backfill failed:", err.message);
+    }
+  }
+
+  // Revoke/restore existing research rows when toggling off/on
+  if (!research_use && wasOptedIn && SEALED_MAPPING_KEY) {
+    try {
+      const docId = hashEmail(email);
+      const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
+      if (sealedDoc.exists) {
+        const { anon_id } = unsealMapping(sealedDoc.data());
+        await bigquery.query({
+          query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = true WHERE anon_id = @anon_id`,
+          params: { anon_id },
+        });
+      }
+    } catch (err) {
+      console.error("Research revoke on opt-out failed:", err.message);
+    }
+  } else if (research_use && wasOptedIn === false && SEALED_MAPPING_KEY) {
+    // Re-opting in: clear revoked flag on existing rows
+    try {
+      const docId = hashEmail(email);
+      const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
+      if (sealedDoc.exists) {
+        const { anon_id } = unsealMapping(sealedDoc.data());
+        await bigquery.query({
+          query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = false WHERE anon_id = @anon_id`,
+          params: { anon_id },
+        });
+      }
+    } catch (err) {
+      console.error("Research restore on re-opt-in failed:", err.message);
+    }
+  }
+
+  res.json({ status: "ok", research_use, ...(backfill_count > 0 && { backfill_count }) });
 });
 
 /** GET /portal/survey — get survey status and any existing responses */

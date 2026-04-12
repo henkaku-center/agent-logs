@@ -1176,6 +1176,141 @@ describe("consent edge cases", () => {
     assert.ok(stored.signed_at, "signed_at should be preserved after toggle");
     assert.equal(stored.research_use, false);
   });
+  it("backfills course.logs to research.logs on opt-in", async () => {
+    const email = "backfill@chibatech.dev";
+    const token = makeToken(email);
+    const anonId = "backfill-anon-uuid";
+
+    // Create sealed mapping
+    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
+    const plaintext = JSON.stringify({ email, anon_id: anonId });
+    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const emailHash = createHash("sha256").update(email).digest("hex");
+    firestoreData[`sealed_mapping/${emailHash}`] = {
+      iv: iv.toString("hex"),
+      ciphertext: ciphertext.toString("hex"),
+      tag: cipher.getAuthTag().toString("hex"),
+    };
+
+    // Mock: first query returns course.logs rows, second returns no existing research rows
+    const courseRow = {
+      project_path: "/home/student/proj",
+      session_id: "s1",
+      file_name: "s1.jsonl",
+      record_type: "user",
+      timestamp: { value: "2026-04-01T00:00:00Z" },
+      version: "2.1.92",
+      data: JSON.stringify({ type: "user", cwd: "/home/student/proj", message: { content: "hello" } }),
+    };
+    // bigqueryQueries tracks calls; bigqueryQueryResults is returned for ALL queries
+    // We need to return different results for different queries
+    let queryCallCount = 0;
+    const origQuery = mockBigQuery.query;
+    mockBigQuery.query = async ({ query, params }) => {
+      bigqueryQueries.push({ query, params });
+      queryCallCount++;
+      // First query: SELECT from course.logs (backfill data)
+      if (query.includes("FROM") && query.includes("course.logs") && !query.includes("UPDATE")) return [[courseRow]];
+      // Second query: SELECT DISTINCT session_id from research_logs (dedup check)
+      if (query.includes("DISTINCT session_id")) return [[]];
+      return [[]];
+    };
+
+    researchRows.length = 0;
+    const { status, data } = await req("/portal/consent", {
+      method: "POST", token, body: { research_use: true },
+    });
+
+    mockBigQuery.query = origQuery;
+
+    assert.equal(status, 200);
+    assert.equal(data.research_use, true);
+    assert.equal(data.backfill_count, 1);
+    assert.equal(researchRows.length, 1);
+    assert.equal(researchRows[0].anon_id, anonId);
+    // Verify anonymization was applied
+    const backfilledData = JSON.parse(researchRows[0].data);
+    assert.equal(backfilledData.cwd, "/home/anon/proj");
+  });
+
+  it("revokes all research rows on opt-out", async () => {
+    const email = "optout@chibatech.dev";
+    const token = makeToken(email);
+    const anonId = "optout-anon-uuid";
+
+    // Create sealed mapping
+    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
+    const plaintext = JSON.stringify({ email, anon_id: anonId });
+    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const emailHash = createHash("sha256").update(email).digest("hex");
+    firestoreData[`sealed_mapping/${emailHash}`] = {
+      iv: iv.toString("hex"),
+      ciphertext: ciphertext.toString("hex"),
+      tag: cipher.getAuthTag().toString("hex"),
+    };
+
+    // Set existing consent as opted-in
+    firestoreData[`consent/${email}`] = { research_use: true, consented_at: new Date() };
+
+    bigqueryQueries.length = 0;
+    const { status, data } = await req("/portal/consent", {
+      method: "POST", token, body: { research_use: false },
+    });
+
+    assert.equal(status, 200);
+    assert.equal(data.research_use, false);
+
+    // Should have an UPDATE setting revoked = true on research_logs
+    const revokeQuery = bigqueryQueries.find((q) => q.query.includes("research_logs") && q.query.includes("UPDATE"));
+    assert.ok(revokeQuery, "should UPDATE research_logs");
+    assert.equal(revokeQuery.params.anon_id, anonId);
+  });
+
+  it("restores revoked research rows on re-opt-in", async () => {
+    const email = "reoptin@chibatech.dev";
+    const token = makeToken(email);
+    const anonId = "reoptin-anon-uuid";
+
+    // Create sealed mapping
+    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
+    const plaintext = JSON.stringify({ email, anon_id: anonId });
+    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+    const emailHash = createHash("sha256").update(email).digest("hex");
+    firestoreData[`sealed_mapping/${emailHash}`] = {
+      iv: iv.toString("hex"),
+      ciphertext: ciphertext.toString("hex"),
+      tag: cipher.getAuthTag().toString("hex"),
+    };
+
+    // Set existing consent as opted-out (was previously in)
+    firestoreData[`consent/${email}`] = { research_use: false, consented_at: new Date() };
+
+    bigqueryQueries.length = 0;
+    // Mock query to return empty for backfill SELECT
+    const origQuery = mockBigQuery.query;
+    mockBigQuery.query = async ({ query, params }) => {
+      bigqueryQueries.push({ query, params });
+      return [[]];
+    };
+
+    const { status, data } = await req("/portal/consent", {
+      method: "POST", token, body: { research_use: true },
+    });
+
+    mockBigQuery.query = origQuery;
+
+    assert.equal(status, 200);
+
+    // Should have an UPDATE setting revoked = false on research_logs
+    const restoreQuery = bigqueryQueries.find((q) => q.query.includes("research_logs") && q.query.includes("UPDATE"));
+    assert.ok(restoreQuery, "should UPDATE research_logs to restore");
+  });
 });
 
 // ── Admin edge cases ──
