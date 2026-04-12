@@ -26,6 +26,11 @@ window.toggleLang = function () {
   if (surveyTab && surveyTab.style.display !== "none") loadSurvey();
 };
 
+/** Pick EN or JA string */
+function t(en, ja) {
+  return getLang() === "ja" ? ja : en;
+}
+
 /** Pick EN or JA text from a "English / 日本語" string */
 function localizeText(text) {
   if (!text) return "";
@@ -38,6 +43,14 @@ function localizeText(text) {
 document.addEventListener("DOMContentLoaded", () => setLang(getLang()));
 
 const SURVEY_ORDER = ["pre_course", "mid_course", "post_course"];
+function surveyLabel(id) {
+  const labels = {
+    pre_course: { en: "Pre-Course", ja: "事前" },
+    mid_course: { en: "Mid-Course", ja: "中間" },
+    post_course: { en: "Post-Course", ja: "事後" },
+  };
+  return labels[id] ? t(labels[id].en, labels[id].ja) : id;
+}
 const SURVEY_LABELS = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" };
 
 function getSurveySections(surveyId) {
@@ -51,13 +64,13 @@ function getSurveySections(surveyId) {
 
 function timeAgo(timestamp) {
   const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return t("just now", "たった今");
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  if (minutes < 60) return getLang() === "ja" ? `${minutes}分前` : `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (hours < 24) return getLang() === "ja" ? `${hours}時間前` : `${hours} hour${hours === 1 ? "" : "s"} ago`;
   const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
+  return getLang() === "ja" ? `${days}日前` : `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function escapeHtml(str) {
@@ -73,11 +86,11 @@ function showSignModal(title, onConfirm) {
     <div class="modal">
       <h3>${title}</h3>
       <div class="info-box warning">
-        <p style="margin-bottom:0">By signing, you confirm that you have read and understood this document. <strong>This action cannot be undone.</strong></p>
+        <p style="margin-bottom:0">${t("By signing, you confirm that you have read and understood this document.", "署名することにより、この文書を読み、理解したことを確認します。")} <strong>${t("This action cannot be undone.", "この操作は取り消せません。")}</strong></p>
       </div>
       <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px">
-        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
-        <button class="btn btn-primary" id="modal-confirm">Sign</button>
+        <button class="btn btn-secondary" id="modal-cancel">${t("Cancel", "キャンセル")}</button>
+        <button class="btn btn-primary" id="modal-confirm">${t("Sign", "署名")}</button>
       </div>
     </div>
   `;
@@ -319,23 +332,23 @@ async function loadDashboard() {
 
     container.innerHTML = `
       <div class="status-card">
-        <div class="label">Projects shared</div>
+        <div class="label">${t("Projects shared", "共有プロジェクト")}</div>
         <div class="value">${sessionsData.projects.length}</div>
       </div>
       <div class="status-card">
-        <div class="label">Sessions synced</div>
+        <div class="label">${t("Sessions synced", "同期セッション")}</div>
         <div class="value">${totalSessions}</div>
       </div>
       <div class="status-card">
-        <div class="label">Research-use</div>
+        <div class="label">${t("Research-use", "研究利用")}</div>
         <div class="value ${consentData.research_use ? "ok" : "off"}">
-          ${consentData.research_use ? "Opted in" : "Not enrolled"}
+          ${consentData.research_use ? t("Opted in", "参加") : t("Not enrolled", "未参加")}
         </div>
       </div>
       <div class="status-card">
-        <div class="label">Pre-study survey</div>
+        <div class="label">${t("Pre-course survey", "事前アンケート")}</div>
         <div class="value ${preStudy.status === "completed" ? "ok" : preStudy.status === "in_progress" ? "warn" : "off"}">
-          ${preStudy.status === "completed" ? "Complete" : preStudy.status === "in_progress" ? "In progress" : "Not started"}
+          ${preStudy.status === "completed" ? t("Complete", "完了") : preStudy.status === "in_progress" ? t("In progress", "進行中") : t("Not started", "未開始")}
         </div>
       </div>
     `;
@@ -363,7 +376,7 @@ async function loadSessions(append = false) {
     const data = await apiFetch(`/portal/sessions?limit=20&offset=${sessionsOffset}`);
 
     if (!append && data.projects.length === 0) {
-      container.innerHTML = "<p>No sessions synced yet. Use Claude Code in a shared project to generate session logs.</p>";
+      container.innerHTML = `<p>${t("No sessions synced yet. Use Claude Code in a shared project to generate session logs.", "まだセッションが同期されていません。共有プロジェクトでClaude Codeを使用してセッションログを生成してください。")}</p>`;
       return;
     }
 
@@ -394,7 +407,7 @@ function renderSessions(container, hasMore) {
       <details class="session-project">
         <summary class="session-project-header">
           <span class="session-project-name">${escapeHtml(name)}</span>
-          <span class="session-project-count">${count} session${count === 1 ? "" : "s"}</span>
+          <span class="session-project-count">${count} ${t("session" + (count === 1 ? "" : "s"), "セッション")}</span>
         </summary>
         <div class="session-project-body">
           ${sessions.map((s) => {
@@ -402,13 +415,13 @@ function renderSessions(container, hasMore) {
             const truncated = title.length > 80 ? title.slice(0, 80) + "…" : title;
             const ago = timeAgo(s.last_timestamp);
             const revokedClass = s.revoked ? " session-revoked" : "";
-            const toggleLabel = s.revoked ? "Restore" : "Withdraw";
+            const toggleLabel = s.revoked ? t("Restore", "復元") : t("Withdraw", "撤回");
             const toggleClass = "btn-secondary";
             return `
               <div class="session-row${revokedClass}">
                 <div style="flex:1">
                   <div class="session-title">${escapeHtml(truncated)}</div>
-                  <div class="session-meta">${ago} · ${s.user_count} prompts · ${s.assistant_count} responses${s.revoked ? ' · <span style="color:#C62828">withdrawn</span>' : ""}</div>
+                  <div class="session-meta">${ago} · ${s.user_count} ${t("prompts", "プロンプト")} · ${s.assistant_count} ${t("responses", "応答")}${s.revoked ? ` · <span style="color:#C62828">${t("withdrawn", "撤回済み")}</span>` : ""}</div>
                 </div>
                 <button class="btn ${toggleClass}" style="font-size:12px;padding:4px 12px" onclick="toggleRevoke('${escapeHtml(path)}','${s.session_id}',${!s.revoked},this)">${toggleLabel}</button>
               </div>
@@ -420,7 +433,7 @@ function renderSessions(container, hasMore) {
   }).join("");
 
   const loadMoreHtml = hasMore
-    ? '<div style="text-align:center;margin:24px 0"><button class="btn btn-secondary" id="load-more-sessions">Load more sessions</button></div>'
+    ? `<div style="text-align:center;margin:24px 0"><button class="btn btn-secondary" id="load-more-sessions">${t("Load more sessions", "さらに読み込む")}</button></div>`
     : "";
 
   container.innerHTML = projectsHtml + loadMoreHtml;
@@ -475,10 +488,10 @@ async function loadConsent() {
     if (isSigned) {
       signArea.innerHTML = `
         <div class="info-box" style="margin-top:24px">
-          <strong>✓ Signed ${new Date(data.signed_at).toLocaleDateString()}</strong>
-          <p style="margin-bottom:0">Your consent form has been signed. Research-use can be changed anytime.</p>
+          <strong>✓ ${t("Signed", "署名済み")} ${new Date(data.signed_at).toLocaleDateString()}</strong>
+          <p style="margin-bottom:0">${t("Your consent form has been signed. Research-use can be changed anytime.", "同意書は署名済みです。研究利用はいつでも変更できます。")}</p>
         </div>
-        <button class="btn btn-secondary" id="consent-export-pdf" style="margin-top:12px">Export PDF</button>
+        <button class="btn btn-secondary" id="consent-export-pdf" style="margin-top:12px">${t("Export PDF", "PDFをエクスポート")}</button>
       `;
       document.getElementById("consent-export-pdf").addEventListener("click", async () => {
         try {
@@ -499,19 +512,19 @@ async function loadConsent() {
     } else {
       signArea.innerHTML = `
         <div class="info-box" style="margin-top:24px">
-          <p style="margin-bottom:0">I have read and understood the above information. I understand that my participation is voluntary, that I may withdraw at any time during the course and up to one month after the end of classes, and that my decision has no effect on my grades or course experience.</p>
+          <p style="margin-bottom:0">${t("I have read and understood the above information. I understand that my participation is voluntary, that I may withdraw at any time during the course and up to one month after the end of classes, and that my decision has no effect on my grades or course experience.", "上記の情報を読み、理解しました。参加は任意であること、授業期間中および授業終了後1ヶ月以内であればいつでも同意を撤回できること、この決定が成績やコースでの経験に影響を与えないことを理解しています。")}</p>
         </div>
-        <button class="btn btn-primary" id="consent-sign-btn" style="margin-top:12px">Sign consent form</button>
+        <button class="btn btn-primary" id="consent-sign-btn" style="margin-top:12px">${t("Sign consent form", "同意書に署名")}</button>
       `;
       document.getElementById("consent-sign-btn").addEventListener("click", () => {
         const eduChecked = document.getElementById("educational-toggle").checked;
         if (!eduChecked) {
-          alert("You must agree to Educational-use before signing the consent form. Research-use is optional and can be changed anytime.");
+          alert(t("You must agree to Educational-use before signing the consent form. Research-use is optional and can be changed anytime.", "同意書に署名するには、教育利用に同意する必要があります。研究利用は任意であり、いつでも変更できます。"));
           return;
         }
         const consentHtml = document.getElementById("consent-form-content")?.innerHTML || "";
         const researchUse = newRes.checked;
-        showSignModal("Sign Informed Consent", async () => {
+        showSignModal(t("Sign Informed Consent", "インフォームド・コンセントに署名"), async () => {
           await apiFetch("/portal/consent/sign", {
             method: "POST",
             body: { consent_html: consentHtml, research_use: researchUse },
@@ -560,40 +573,38 @@ async function loadSurvey() {
       }
     }
 
-    // Status rows — signed = "Complete", locked = "Locked", otherwise clickable link
     const statusHtml = SURVEY_ORDER.map((id) => {
       const s = data.surveys[id];
-      const label = SURVEY_LABELS[id];
+      const label = surveyLabel(id);
       if (s.signed_at) {
-        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status shared">Complete</span></div>`;
+        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status shared">${t("Complete", "完了")}</span></div>`;
       }
       if (s.status === "locked") {
-        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status withdrawn">Locked</span></div>`;
+        return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span><span class="status withdrawn">${t("Locked", "未公開")}</span></div>`;
       }
-      const badge = s.status === "completed" ? '<span class="status" style="background:#E8F5E9;color:#2E7D32">Submitted</span>'
-        : s.status === "in_progress" ? '<span class="status" style="background:#FFF3E0;color:#E65100">In progress</span>'
-        : '<span class="status withdrawn">Not started</span>';
+      const badge = s.status === "completed" ? `<span class="status" style="background:#E8F5E9;color:#2E7D32">${t("Submitted", "提出済み")}</span>`
+        : s.status === "in_progress" ? `<span class="status" style="background:#FFF3E0;color:#E65100">${t("In progress", "進行中")}</span>`
+        : `<span class="status withdrawn">${t("Not started", "未開始")}</span>`;
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0;cursor:pointer" onclick="openSurvey('${id}')"><span style="color:var(--blue);text-decoration:underline">${label}</span>${badge}</div>`;
     }).join("");
 
-    // Sign/export buttons for submitted-but-unsigned surveys
     const signButtons = SURVEY_ORDER.map((id) => {
       const s = data.surveys[id];
       if (s.signed_at) {
-        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${SURVEY_LABELS[id]} signed ${new Date(s.signed_at).toLocaleDateString()}</span>
-          <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button></div>`;
+        return `<div style="margin:8px 0"><span style="color:#2E7D32;font-weight:700">✓ ${surveyLabel(id)} ${t("signed", "署名済み")} ${new Date(s.signed_at).toLocaleDateString()}</span>
+          <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">${t("Export PDF", "PDFをエクスポート")}</button></div>`;
       }
       if (s.status === "completed") {
         return `<div style="margin:8px 0">
-          <button class="btn btn-primary" onclick="signSurvey('${id}')">Sign ${SURVEY_LABELS[id]} survey</button>
-          <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">Export PDF</button>
+          <button class="btn btn-primary" onclick="signSurvey('${id}')">${t("Sign", "署名")} ${surveyLabel(id)} ${t("survey", "アンケート")}</button>
+          <button class="btn btn-secondary" style="margin-left:8px" onclick="exportSurveyPDF('${id}')">${t("Export PDF", "PDFをエクスポート")}</button>
         </div>`;
       }
       return "";
     }).join("");
 
     if (!activeSurvey) {
-      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}<div class="info-box"><strong>All surveys signed.</strong> Thank you for your participation.</div>`;
+      container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}<div class="info-box"><strong>${t("All surveys signed.", "全てのアンケートが署名されました。")}</strong> ${t("Thank you for your participation.", "ご参加ありがとうございます。")}</div>`;
       return;
     }
 
@@ -736,7 +747,7 @@ function renderSurveyForm(surveyId, responses) {
               <label><input type="radio" name="${q.id}" value="${n}" ${responses[q.id] == n ? "checked" : ""}><span>${n}</span></label>
             `).join("")}
           </div>
-          <div class="likert-labels"><span>${s.minLabel}</span><span>${s.maxLabel}</span></div>
+          <div class="likert-labels"><span>${localizeText(s.minLabel)}</span><span>${localizeText(s.maxLabel)}</span></div>
         </div>`;
       }
 
@@ -745,16 +756,16 @@ function renderSurveyForm(surveyId, responses) {
         const range = Array.from({ length: vs.max - vs.min + 1 }, (_, i) => vs.min + i);
         return `<div class="survey-question">
           <div class="question-text"><strong>${num}. ${qText}</strong></div>
-          <p style="margin:8px 0">A. How appropriate is this task for AI?</p>
+          <p style="margin:8px 0">${t("A. How appropriate is this task for AI?", "A. このタスクはAIにどの程度適していますか？")}</p>
           <div class="likert-scale">
             ${range.map((n) => `
               <label><input type="radio" name="${q.id}_a" value="${n}" ${responses[q.id + "_a"] == n ? "checked" : ""}><span>${n}</span></label>
             `).join("")}
           </div>
-          <div class="likert-labels"><span>${vs.minLabel}</span><span>${vs.maxLabel}</span></div>
-          <p style="margin:12px 0 4px">B. Explain your reasoning (1-2 sentences)</p>
+          <div class="likert-labels"><span>${localizeText(vs.minLabel)}</span><span>${localizeText(vs.maxLabel)}</span></div>
+          <p style="margin:12px 0 4px">${t("B. Explain your reasoning (1-2 sentences)", "B. 理由を説明してください（1〜2文）")}</p>
           <textarea class="survey-text" name="${q.id}_b" rows="2">${responses[q.id + "_b"] || ""}</textarea>
-          <p style="margin:12px 0 4px">C. Which tool would you use?</p>
+          <p style="margin:12px 0 4px">${t("C. Which tool would you use?", "C. どのツールを使いますか？")}</p>
           <input class="form-input" name="${q.id}_c" value="${responses[q.id + "_c"] || ""}" placeholder="e.g., Claude Code, ChatGPT, none...">
         </div>`;
       }
@@ -818,8 +829,8 @@ function renderSurveyForm(surveyId, responses) {
       </div>
       ${html}
       <div class="survey-nav">
-        <button type="button" class="btn btn-secondary" id="survey-save">Save progress</button>
-        <button type="button" class="btn btn-primary" id="survey-submit">Submit survey</button>
+        <button type="button" class="btn btn-secondary" id="survey-save">${t("Save progress", "保存")}</button>
+        <button type="button" class="btn btn-primary" id="survey-submit">${t("Submit survey", "アンケートを提出")}</button>
       </div>
     </form>
   `;
@@ -846,14 +857,14 @@ window.toggleRevoke = async function(projectPath, sessionId, revoked, btn) {
     const row = btn.closest(".session-row");
     if (revoked) {
       row.classList.add("session-revoked");
-      btn.textContent = "Restore";
+      btn.textContent = t("Restore", "復元");
       const meta = row.querySelector(".session-meta");
       if (meta && !meta.innerHTML.includes("withdrawn")) {
-        meta.innerHTML += ' · <span style="color:var(--dark-grey)">withdrawn</span>';
+        meta.innerHTML += ` · <span style="color:var(--dark-grey)">${t("withdrawn", "撤回済み")}</span>`;
       }
     } else {
       row.classList.remove("session-revoked");
-      btn.textContent = "Withdraw";
+      btn.textContent = t("Withdraw", "撤回");
       const meta = row.querySelector(".session-meta");
       if (meta) meta.innerHTML = meta.innerHTML.replace(/ · <span[^>]*>withdrawn<\/span>/, "");
     }
@@ -880,7 +891,7 @@ window.openSurvey = function(surveyId) {
 // Global handlers for survey sign/export (called from onclick in rendered HTML)
 window.signSurvey = function(surveyId) {
   const label = SURVEY_LABELS[surveyId];
-  showSignModal(`Sign ${label} Survey`, async () => {
+  showSignModal(`${t("Sign", "署名")} ${label} ${t("Survey", "アンケート")}`, async () => {
     await apiFetch("/portal/survey/sign", { method: "POST", body: { survey_id: surveyId } });
     loadSurvey();
   });
