@@ -36,12 +36,6 @@
         } else { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
       } catch { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
     } else { bar.innerHTML = '<a href="portal.html">Log in</a>'; }
-    // Apply language
-    const lang = localStorage.getItem("agent_logs_lang") || (navigator.language?.startsWith("ja") ? "ja" : "en");
-    document.documentElement.lang = lang;
-    document.querySelectorAll("[data-en][data-ja]").forEach(el => { el.innerHTML = el.dataset[lang]; });
-    const lb = document.getElementById("lang-toggle");
-    if (lb) lb.textContent = lang === "en" ? "日本語" : "English";
   </script>
 
   <!-- Hero -->
@@ -159,6 +153,14 @@
       <a href="https://github.com/henkaku-center/agent-logs">GitHub</a>
     </div>
   </footer>
+
+  <script>
+    const lang = localStorage.getItem("agent_logs_lang") || (navigator.language?.startsWith("ja") ? "ja" : "en");
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-en][data-ja]").forEach(el => { el.innerHTML = el.dataset[lang]; });
+    const lb = document.getElementById("lang-toggle");
+    if (lb) lb.textContent = lang === "en" ? "日本語" : "English";
+  </script>
 
 </body>
 </html>
