@@ -327,10 +327,17 @@ strong { font-weight: 700; }
 
 .auth-bar {
   font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.auth-bar .user-name {
-  font-weight: 700;
+.auth-bar a {
+  color: var(--white);
+}
+.auth-bar a:hover {
+  opacity: 0.7;
+  text-decoration: none;
 }
 
 .login-btn {
