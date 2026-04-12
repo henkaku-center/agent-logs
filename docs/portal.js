@@ -3,28 +3,7 @@
 
 const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
 
-// ── Language toggle ──
-
-function getLang() {
-  return localStorage.getItem("agent_logs_lang") || (navigator.language?.startsWith("ja") ? "ja" : "en");
-}
-
-function setLang(lang) {
-  localStorage.setItem("agent_logs_lang", lang);
-  document.documentElement.lang = lang;
-  document.querySelectorAll("[data-en][data-ja]").forEach((el) => {
-    el.innerHTML = el.dataset[lang];
-  });
-  const btn = document.getElementById("lang-toggle");
-  if (btn) btn.textContent = lang === "en" ? "日本語" : "English";
-}
-
-window.toggleLang = function () {
-  setLang(getLang() === "en" ? "ja" : "en");
-  // Re-render survey form if visible (it uses localizeText at render time)
-  const surveyTab = document.getElementById("tab-survey");
-  if (surveyTab && surveyTab.style.display !== "none") loadSurvey();
-};
+// ── Language helpers (getLang, setLang, toggleLang loaded from lang.js) ──
 
 /** Pick EN or JA string */
 function t(en, ja) {
@@ -39,9 +18,6 @@ function localizeText(text) {
   return getLang() === "ja" ? parts.slice(1).join(" / ") : parts[0];
 }
 
-// Apply saved language on load
-document.addEventListener("DOMContentLoaded", () => setLang(getLang()));
-
 const SURVEY_ORDER = ["pre_course", "mid_course", "post_course"];
 function surveyLabel(id) {
   const labels = {
@@ -51,7 +27,6 @@ function surveyLabel(id) {
   };
   return labels[id] ? t(labels[id].en, labels[id].ja) : id;
 }
-const SURVEY_LABELS = { pre_course: "Pre-Course", mid_course: "Mid-Course", post_course: "Post-Course" };
 
 function getSurveySections(surveyId) {
   const survey = window.SURVEYS?.[surveyId];
@@ -890,7 +865,7 @@ window.openSurvey = function(surveyId) {
 
 // Global handlers for survey sign/export (called from onclick in rendered HTML)
 window.signSurvey = function(surveyId) {
-  const label = SURVEY_LABELS[surveyId];
+  const label = surveyLabel(surveyId);
   showSignModal(`${t("Sign", "署名")} ${label} ${t("Survey", "アンケート")}`, async () => {
     await apiFetch("/portal/survey/sign", { method: "POST", body: { survey_id: surveyId } });
     loadSurvey();
@@ -898,7 +873,7 @@ window.signSurvey = function(surveyId) {
 };
 
 window.exportSurveyPDF = async function(surveyId) {
-  const label = SURVEY_LABELS[surveyId];
+  const label = surveyLabel(surveyId);
   try {
     const data = await apiFetch("/portal/survey");
     const survey = data.surveys[surveyId];
