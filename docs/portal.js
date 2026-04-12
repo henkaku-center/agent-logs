@@ -6,7 +6,7 @@ const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
 // ── Language toggle ──
 
 function getLang() {
-  return localStorage.getItem("agent_logs_lang") || "en";
+  return localStorage.getItem("agent_logs_lang") || (navigator.language?.startsWith("ja") ? "ja" : "en");
 }
 
 function setLang(lang) {
