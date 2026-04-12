@@ -176,8 +176,24 @@ switch (command) {
       }
     }
 
-    // Read projects after potential login
+    // Read projects after potential login, sync consent from server
     const projects = readProjects();
+    try {
+      const token = readToken()?.token;
+      if (token) {
+        const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (resp.ok) {
+          const consent = await resp.json();
+          if (projects.research_use !== (consent.research_use || false)) {
+            projects.research_use = consent.research_use || false;
+            writeProjects(projects);
+          }
+        }
+      }
+    } catch {}
 
     // Already decided — skip
     if (projects.shared.includes(cwd) || projects.withdrawn.includes(cwd)) break;
@@ -236,20 +252,8 @@ switch (command) {
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 
     if (projects.shared.includes(cwd)) {
-      const edu = true; // Always true for shared projects
-      let res = projects.research_use || false;
-      try {
-        const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
-          headers: { Authorization: `Bearer ${readToken()?.token}` },
-          signal: AbortSignal.timeout(3000),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          res = data.research_use || false;
-        }
-      } catch {
-        // Offline fallback — use cached value
-      }
+      const edu = true;
+      const res = projects.research_use || false;
       const eduLabel = edu ? cyanBold("● Educational-use") : dim("○ Educational-use");
       const resLabel = res ? cyanBold("● Research-use") : dim("○ Research-use");
 
