@@ -151,7 +151,7 @@ function showPortal(email) {
     localStorage.removeItem("agent_logs_token");
     showLogin();
   });
-  loadDashboard();
+  loadConsent();
 }
 
 // ── Login flow ──
@@ -248,6 +248,7 @@ function setupTabs() {
         s.style.display = s.id === `tab-${tabId}` ? "" : "none";
       });
       // Load data when switching tabs
+      if (tabId === "dashboard") loadDashboard();
       if (tabId === "sessions") loadSessions();
       if (tabId === "consent") loadConsent();
       if (tabId === "survey") loadSurvey();
