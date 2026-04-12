@@ -282,7 +282,7 @@ async function loadDashboard() {
         <div class="value">${totalSessions}</div>
       </div>
       <div class="status-card">
-        <div class="label">Research consent</div>
+        <div class="label">Research-use</div>
         <div class="value ${consentData.research_use ? "ok" : "off"}">
           ${consentData.research_use ? "Opted in" : "Not enrolled"}
         </div>
@@ -388,21 +388,30 @@ function renderSessions(container, hasMore) {
 // ── Consent ──
 
 async function loadConsent() {
-  const toggle = document.getElementById("research-toggle");
-  const status = document.getElementById("consent-status");
-  const label = document.getElementById("consent-label");
+  const eduToggle = document.getElementById("educational-toggle");
+  const resToggle = document.getElementById("research-toggle");
   const signArea = document.getElementById("consent-sign-area");
 
   try {
     const data = await apiFetch("/portal/consent");
-    toggle.checked = data.research_use;
-    updateConsentUI(data.research_use, status, label);
-
     const isSigned = !!data.signed_at;
 
+    // Educational-use toggle
+    eduToggle.checked = isSigned || eduToggle.checked;
     if (isSigned) {
-      // Locked — disable toggle, show signed status + export
-      toggle.disabled = true;
+      eduToggle.disabled = true;
+      eduToggle.closest(".consent-toggle-row").classList.add("disabled");
+    } else {
+      // Clone to remove stale listeners
+      const newEdu = eduToggle.cloneNode(true);
+      eduToggle.parentNode.replaceChild(newEdu, eduToggle);
+    }
+
+    // Research-use toggle
+    resToggle.checked = data.research_use;
+    if (isSigned) {
+      resToggle.disabled = true;
+      resToggle.closest(".consent-toggle-row").classList.add("disabled");
       signArea.innerHTML = `
         <div class="info-box" style="margin-top:24px">
           <strong>✓ Signed ${new Date(data.signed_at).toLocaleDateString()}</strong>
@@ -416,7 +425,7 @@ async function loadConsent() {
         exportPDF("Informed Consent — Agent Logs", `
           <h2>Consent Preferences</h2>
           <table>
-            <tr><th>Educational-use</th><td>✓ Enabled (course requirement)</td></tr>
+            <tr><th>Educational-use</th><td>✓ Enabled</td></tr>
             <tr><th>Research-use</th><td>${data.research_use ? "✓ Opted in" : "○ Not enrolled"}</td></tr>
           </table>
           <div class="signature">
@@ -428,17 +437,16 @@ async function loadConsent() {
       });
     } else {
       // Not signed — allow toggle changes + show sign button
-      const newToggle = toggle.cloneNode(true);
-      toggle.parentNode.replaceChild(newToggle, toggle);
-      newToggle.addEventListener("change", async () => {
+      const newRes = resToggle.cloneNode(true);
+      resToggle.parentNode.replaceChild(newRes, resToggle);
+      newRes.addEventListener("change", async () => {
         try {
-          const result = await apiFetch("/portal/consent", {
+          await apiFetch("/portal/consent", {
             method: "POST",
-            body: { research_use: newToggle.checked },
+            body: { research_use: newRes.checked },
           });
-          updateConsentUI(result.research_use, status, label);
         } catch (err) {
-          newToggle.checked = !newToggle.checked;
+          newRes.checked = !newRes.checked;
           alert(err.message);
         }
       });
@@ -450,22 +458,20 @@ async function loadConsent() {
         <button class="btn btn-primary" id="consent-sign-btn" style="margin-top:12px">Sign consent form</button>
       `;
       document.getElementById("consent-sign-btn").addEventListener("click", () => {
-        showSignModal("Sign Consent Form", async () => {
+        const eduChecked = document.getElementById("educational-toggle").checked;
+        if (!eduChecked) {
+          alert("You must agree to Educational-use before signing the consent form.");
+          return;
+        }
+        showSignModal("Sign Informed Consent", async () => {
           await apiFetch("/portal/consent/sign", { method: "POST", body: {} });
-          loadConsent(); // Reload to show signed state
+          loadConsent();
         });
       });
     }
   } catch (err) {
-    status.textContent = err.message;
-    status.className = "consent-status off";
+    signArea.innerHTML = `<p class="form-error">${err.message}</p>`;
   }
-}
-
-function updateConsentUI(isOn, statusEl, labelEl) {
-  statusEl.textContent = isOn ? "Opted in" : "Not enrolled";
-  statusEl.className = `consent-status ${isOn ? "on" : "off"}`;
-  labelEl.textContent = isOn ? "Research-use enabled" : "Opt in to Research-use";
 }
 
 // ── Survey ──

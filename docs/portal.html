@@ -77,17 +77,31 @@
     <!-- Consent -->
     <section class="section" id="tab-consent" style="display:none">
       <div class="container">
-        <h2>Research Consent</h2>
+        <h2>Informed Consent</h2>
 
-        <div class="consent-toggle-box" id="consent-toggle-box">
-          <div class="consent-status" id="consent-status"></div>
-          <label class="toggle">
-            <input type="checkbox" id="research-toggle">
-            <span class="toggle-slider"></span>
-          </label>
-          <span id="consent-label">Opt in to Research-use</span>
+        <div class="consent-toggles" id="consent-toggle-box">
+          <div class="consent-toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="educational-toggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <span class="consent-toggle-label" id="educational-label">Educational-use</span>
+              <div class="consent-toggle-hint">Session logs shared with instructors for evaluation and feedback</div>
+            </div>
+          </div>
+          <div class="consent-toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="research-toggle">
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <span class="consent-toggle-label" id="consent-label">Research-use</span>
+              <div class="consent-toggle-hint">Anonymised session logs used for academic research (voluntary)</div>
+            </div>
+          </div>
         </div>
-        <p class="form-hint">You can change this at any time before signing. Data flagged for deletion is removed one month after the program ends.</p>
+        <p class="form-hint">You can change Research-use at any time before signing. Data flagged for deletion is removed one month after the program ends.</p>
 
         <div id="consent-form-content">
           <div class="consent-document">
