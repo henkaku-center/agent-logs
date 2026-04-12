@@ -465,7 +465,7 @@ async function loadSurvey() {
       }
     }
 
-    // Show completion status for all surveys
+    // Show completion status for all surveys — clickable for in-progress/not-started
     const statusHtml = surveyOrder.map((id) => {
       const s = data.surveys[id];
       const label = { pre_study: "Pre-Study", mid_semester: "Mid-Semester", post_study: "Post-Study" }[id];
@@ -473,7 +473,10 @@ async function loadSurvey() {
         : s.status === "locked" ? '<span class="status withdrawn">Locked</span>'
         : s.status === "in_progress" ? '<span class="status" style="background:#FFF3E0;color:#E65100">In progress</span>'
         : '<span class="status withdrawn">Not started</span>';
-      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0"><span>${label}</span>${badge}</div>`;
+      const clickable = (s.status === "in_progress" || s.status === "not_started");
+      const style = clickable ? "cursor:pointer" : "";
+      const onclick = clickable ? `onclick="scrollToSurveyForm()"` : "";
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #E0E0E0;${style}" ${onclick}><span>${label}</span>${badge}</div>`;
     }).join("");
 
     // Add sign/export buttons for completed surveys
@@ -514,16 +517,14 @@ async function loadSurvey() {
   }
 }
 
-async function saveSurvey(completed) {
+function collectSurveyResponses() {
   const form = document.getElementById("survey-form");
-  if (!form) return;
+  if (!form) return null;
 
-  // Collect responses, handling checkboxes specially
   const formData = new FormData(form);
   const responses = {};
   const checkboxes = {};
   for (const [key, value] of formData.entries()) {
-    // Group checkbox values with ||| separator
     const el = form.querySelector(`[name="${key}"]`);
     if (el && el.type === "checkbox") {
       if (!checkboxes[key]) checkboxes[key] = [];
@@ -535,9 +536,66 @@ async function saveSurvey(completed) {
   for (const [key, values] of Object.entries(checkboxes)) {
     responses[key] = values.join("|||");
   }
+  return responses;
+}
 
-  // Determine active survey from the form
+function validateSurvey(surveyId) {
+  const survey = window.SURVEYS?.[surveyId];
+  if (!survey) return [];
+
+  let sections = survey.sections;
+  if (surveyId === "post_study") {
+    sections = window.SURVEYS.pre_study.sections.filter(
+      (s) => s.phase.includes("post_study")
+    );
+  }
+
+  const form = document.getElementById("survey-form");
+  if (!form) return [];
+
+  const missing = [];
+  for (const section of sections) {
+    for (const q of section.questions) {
+      if (q.type === "vignette") {
+        // Vignette has 3 sub-parts: _a (likert), _b (text), _c (text)
+        if (!form.querySelector(`[name="${q.id}_a"]:checked`)) missing.push({ section: section.id, question: q.id + "_a" });
+        const bVal = form.querySelector(`[name="${q.id}_b"]`)?.value?.trim();
+        if (!bVal) missing.push({ section: section.id, question: q.id + "_b" });
+      } else if (q.type === "radio" || q.type === "likert") {
+        if (!form.querySelector(`[name="${q.id}"]:checked`)) missing.push({ section: section.id, question: q.id });
+      } else if (q.type === "text" || q.type === "textarea") {
+        const val = form.querySelector(`[name="${q.id}"]`)?.value?.trim();
+        if (!val) missing.push({ section: section.id, question: q.id });
+      } else if (q.type === "percentage") {
+        for (let ci = 0; ci < q.categories.length; ci++) {
+          const val = form.querySelector(`[name="${q.id}_${ci}"]`)?.value?.trim();
+          if (!val) missing.push({ section: section.id, question: `${q.id}_${ci}` });
+        }
+      }
+      // checkbox is optional (can select none)
+    }
+  }
+  return missing;
+}
+
+async function saveSurvey(completed) {
+  const form = document.getElementById("survey-form");
+  if (!form) return;
+
   const surveyId = form.dataset.surveyId || "pre_study";
+  const responses = collectSurveyResponses();
+
+  if (completed) {
+    const missing = validateSurvey(surveyId);
+    if (missing.length > 0) {
+      const sections = [...new Set(missing.map((m) => m.section))];
+      alert(`Please complete all questions before submitting.\n\nMissing responses in: ${sections.join(", ")}`);
+      // Scroll to first missing question
+      const firstMissing = form.querySelector(`[name="${missing[0].question}"]`);
+      if (firstMissing) firstMissing.closest(".survey-question")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+  }
 
   try {
     await apiFetch("/portal/survey", {
@@ -545,7 +603,7 @@ async function saveSurvey(completed) {
       body: { survey_id: surveyId, responses, completed },
     });
     if (completed) {
-      loadSurvey(); // Refresh to show completion status
+      loadSurvey();
     }
   } catch (err) {
     alert(`Failed to save: ${err.message}`);
@@ -678,6 +736,10 @@ function renderSurveyForm(surveyId, responses) {
     </form>
   `;
 }
+
+window.scrollToSurveyForm = function() {
+  document.getElementById("survey-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+};
 
 // Global handlers for survey sign/export (called from onclick in rendered HTML)
 window.signSurvey = function(surveyId) {

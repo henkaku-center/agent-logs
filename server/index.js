@@ -677,6 +677,13 @@ app.post("/portal/survey", async (req, res) => {
     return res.status(403).json({ error: "Survey already submitted. Responses cannot be changed." });
   }
 
+  if (completed) {
+    const merged = { ...(existing.responses || {}), ...responses };
+    if (Object.keys(merged).length === 0) {
+      return res.status(400).json({ error: "Cannot submit an empty survey." });
+    }
+  }
+
   const update = {
     responses: { ...(existing.responses || {}), ...responses },
     updated_at: new Date(),
