@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync, existsSync } from "fs";
+import { readFileSync, readdirSync, statSync, existsSync, openSync, readSync, closeSync } from "fs";
 import { join, relative } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
@@ -44,16 +44,25 @@ function pathToProjectDir(fsPath) {
   return fsPath.replace(/\//g, "-").replace(/^-/, "-");
 }
 
-/**
- * Compute tail hash (SHA-256 of last 1024 bytes before offset).
- */
-function computeTailHash(filePath, offset) {
+/** Compute tail hash from a buffer (SHA-256 of last 1024 bytes before offset). */
+function tailHash(buf, offset) {
   if (offset <= 0) return null;
   const start = Math.max(0, offset - 1024);
-  const length = offset - start;
-  const fd = readFileSync(filePath);
-  const slice = fd.slice(start, start + length);
-  return createHash("sha256").update(slice).digest("hex");
+  return createHash("sha256").update(buf.subarray(start, offset)).digest("hex");
+}
+
+/** Read a slice of a file into a Buffer (offset to EOF, plus tail bytes for hash). */
+function readFileSlice(filePath, cursorOffset, fileSize) {
+  const tailStart = Math.max(0, cursorOffset - 1024);
+  const length = fileSize - tailStart;
+  const buf = Buffer.alloc(length);
+  const fd = openSync(filePath, "r");
+  try {
+    readSync(fd, buf, 0, length, tailStart);
+  } finally {
+    closeSync(fd);
+  }
+  return { buf, tailStart };
 }
 
 /**
@@ -131,29 +140,28 @@ export async function sync() {
       // Nothing new
       if (fileSize <= cursor.offset) continue;
 
+      // Single read: tail bytes (for hash check) + new bytes (for sync)
+      const { buf, tailStart } = readFileSlice(filePath, cursor.offset, fileSize);
+
       // Validate continuity
       if (fileSize < cursor.offset) {
-        // File truncated -- reset cursor
         cursor.offset = 0;
         cursor.tail_hash = null;
       } else if (cursor.offset > 0 && cursor.tail_hash) {
-        const currentHash = computeTailHash(filePath, cursor.offset);
+        const currentHash = tailHash(buf, cursor.offset - tailStart);
         if (currentHash !== cursor.tail_hash) {
-          // File rewritten -- reset cursor
           cursor.offset = 0;
           cursor.tail_hash = null;
         }
       }
 
-      // Read from cursor to EOF
-      const content = readFileSync(filePath, "utf8");
-      const bytes = Buffer.from(content, "utf8");
-      const newBytes = bytes.slice(cursor.offset);
-      const newText = newBytes.toString("utf8");
+      // Extract new text from cursor to EOF
+      const newStart = cursor.offset - tailStart;
+      const newText = buf.subarray(newStart).toString("utf8");
 
       // Truncate at last complete line
       const lastNewline = newText.lastIndexOf("\n");
-      if (lastNewline === -1) continue; // No complete lines yet
+      if (lastNewline === -1) continue;
       const completeText = newText.slice(0, lastNewline + 1);
 
       // Filter and strip lines
@@ -164,21 +172,19 @@ export async function sync() {
         try {
           parsed = JSON.parse(line);
         } catch {
-          continue; // Skip unparseable lines
+          continue;
         }
         if (!ALLOWED_TYPES.has(parsed.type)) continue;
-        // Only sync lines created after consent was granted
         if (parsed.timestamp && new Date(parsed.timestamp).getTime() < consentedAtMs) continue;
         const stripped = stripToolResults(parsed);
         filteredLines.push(JSON.stringify(stripped));
       }
 
       if (filteredLines.length === 0) {
-        // Advance cursor past filtered/skipped lines
         const newOffset = cursor.offset + Buffer.byteLength(completeText, "utf8");
         cursors[cursorKey] = {
           offset: newOffset,
-          tail_hash: computeTailHash(filePath, newOffset),
+          tail_hash: tailHash(buf, newOffset - tailStart),
         };
         writeCursors(cursors);
         continue;
@@ -207,10 +213,9 @@ export async function sync() {
         if (!resp.ok) {
           const body = await resp.json().catch(() => ({}));
           if (resp.status === 409 && body.server_offset != null) {
-            // Server returned its offset -- adopt it
             cursors[cursorKey] = {
               offset: body.server_offset,
-              tail_hash: computeTailHash(filePath, body.server_offset),
+              tail_hash: tailHash(buf, body.server_offset - tailStart),
             };
             writeCursors(cursors);
           }
@@ -221,7 +226,7 @@ export async function sync() {
         const result = await resp.json();
         cursors[cursorKey] = {
           offset: result.server_offset,
-          tail_hash: computeTailHash(filePath, result.server_offset),
+          tail_hash: tailHash(buf, result.server_offset - tailStart),
         };
         writeCursors(cursors);
         totalAccepted += result.lines_accepted;
