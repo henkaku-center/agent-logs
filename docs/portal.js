@@ -784,19 +784,44 @@ window.exportSurveyPDF = async function(surveyId) {
     if (!survey || !survey.responses) { alert("No responses to export."); return; }
 
     const responses = survey.responses;
-    const rows = Object.entries(responses).map(([k, v]) =>
-      `<tr><td style="font-weight:700;width:120px">${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`
-    ).join("");
+    const surveyDef = window.SURVEYS?.[surveyId];
+    let sections = surveyDef?.sections || [];
+    if (surveyId === "post_study") {
+      sections = window.SURVEYS.pre_study.sections.filter((s) => s.phase.includes("post_study"));
+    }
+
+    // Build HTML with questions and answers
+    let html = "";
+    for (const section of sections) {
+      html += `<h2>${section.id}. ${escapeHtml(section.title)}</h2>`;
+      for (const q of section.questions) {
+        const qText = q.text.split(" / ")[0]; // English only for PDF
+        if (q.type === "vignette") {
+          html += `<p style="margin:12px 0 4px"><strong>${escapeHtml(qText)}</strong></p>`;
+          html += `<table>`;
+          html += `<tr><td style="width:40%">Appropriateness (1-7)</td><td>${escapeHtml(responses[q.id + "_a"] || "—")}</td></tr>`;
+          html += `<tr><td>Reasoning</td><td>${escapeHtml(responses[q.id + "_b"] || "—")}</td></tr>`;
+          html += `<tr><td>Tool choice</td><td>${escapeHtml(responses[q.id + "_c"] || "—")}</td></tr>`;
+          html += `</table>`;
+        } else if (q.type === "percentage") {
+          html += `<p style="margin:12px 0 4px"><strong>${escapeHtml(qText)}</strong></p><table>`;
+          for (let ci = 0; ci < (q.categories || []).length; ci++) {
+            const cat = q.categories[ci].split(" / ")[0];
+            html += `<tr><td>${escapeHtml(cat)}</td><td>${escapeHtml(responses[q.id + "_" + ci] || "—")}%</td></tr>`;
+          }
+          html += `</table>`;
+        } else {
+          const answer = responses[q.id] || "—";
+          html += `<table><tr><td style="width:60%">${escapeHtml(qText)}</td><td><strong>${escapeHtml(String(answer))}</strong></td></tr></table>`;
+        }
+      }
+    }
 
     const signLine = survey.signed_at
       ? `<p class="check">✓ Signed by participant on ${new Date(survey.signed_at).toLocaleString()}</p>`
       : `<p style="color:#666">Not yet signed</p>`;
 
-    exportPDF(`${label} Survey — Agent Logs`, `
-      <h2>Responses</h2>
-      <table>${rows}</table>
-      <div class="signature">${signLine}</div>
-    `);
+    exportPDF(`${label} Survey — Agent Logs`, `${html}<div class="signature">${signLine}</div>`);
   } catch (err) {
     alert(err.message);
   }
