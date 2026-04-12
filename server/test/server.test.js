@@ -672,7 +672,370 @@ describe("admin allowlist", () => {
   });
 });
 
-// ── OTLP endpoint ──
+// ── Auth edge cases ──
+
+describe("auth edge cases", () => {
+  it("rejects expired JWT", async () => {
+    const expired = jwt.sign({ email: "student@chibatech.dev" }, JWT_SECRET, { expiresIn: "-1s" });
+    const { status } = await req("/portal/consent", { token: expired });
+    assert.equal(status, 401);
+  });
+
+  it("rejects malformed JWT", async () => {
+    const { status } = await req("/portal/consent", { token: "not.a.jwt" });
+    assert.equal(status, 401);
+  });
+
+  it("rejects expired verification code", async () => {
+    firestoreData["auth_codes/admin@test.com"] = {
+      code: "123456",
+      created_at: new Date(),
+      expires_at: { toDate: () => new Date(Date.now() - 1000) }, // expired 1s ago
+      attempts: 0,
+    };
+    const { status, data } = await req("/auth/verify-code", {
+      method: "POST",
+      body: { email: "admin@test.com", code: "123456" },
+    });
+    assert.equal(status, 401);
+    assert.ok(data.error.includes("expired"));
+  });
+
+  it("normalizes email case", async () => {
+    firestoreData["allowlist/emails"] = { list: ["user@test.com"] };
+    await withOAuthMock(async () => {
+      const { status } = await req("/auth/send-code", {
+        method: "POST",
+        body: { email: "USER@TEST.COM" },
+      });
+      assert.equal(status, 200);
+      // Code stored under lowercase key
+      assert.ok(firestoreData["auth_codes/user@test.com"]);
+    });
+  });
+});
+
+// ── Ingest edge cases ──
+
+describe("ingest edge cases", () => {
+  it("handles malformed JSON in lines array", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status, data } = await req("/ingest", {
+      method: "POST",
+      token,
+      body: {
+        project_path: "/test",
+        session_id: "sess1",
+        file_name: "sess1.jsonl",
+        offset: 0,
+        file_offset: 20,
+        lines: ["not valid json", "{also broken"],
+      },
+    });
+    // Server parses lines for record_type but catches parse errors
+    assert.equal(status, 200);
+    assert.equal(bigqueryRows.length, 2);
+    assert.equal(bigqueryRows[0].record_type, "unknown");
+  });
+
+  it("isolates offsets between different participants", async () => {
+    const token1 = makeToken("alice@chibatech.dev");
+    const token2 = makeToken("bob@chibatech.dev");
+    const line = JSON.stringify({ type: "user", message: { content: "hi" } });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token: token1,
+      body: { project_path: "/proj", session_id: "s1", file_name: "s1.jsonl", offset: 0, file_offset: fileOffset, lines: [line] },
+    });
+    // Bob's upload to same session_id/file_name should not conflict
+    const { status, data } = await req("/ingest", {
+      method: "POST", token: token2,
+      body: { project_path: "/proj", session_id: "s1", file_name: "s1.jsonl", offset: 0, file_offset: fileOffset, lines: [line] },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.lines_accepted, 1);
+  });
+});
+
+// ── Portal: Revoke ──
+
+describe("POST /portal/revoke", () => {
+  it("revokes a specific session", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status, data } = await req("/portal/revoke", {
+      method: "POST", token,
+      body: { project_path: "/home/student/project", session_id: "sess-1", revoked: true },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.revoked, true);
+  });
+
+  it("un-revokes a session", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status, data } = await req("/portal/revoke", {
+      method: "POST", token,
+      body: { project_path: "/home/student/project", session_id: "sess-1", revoked: false },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.revoked, false);
+  });
+
+  it("revokes entire project (no session_id)", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status, data } = await req("/portal/revoke", {
+      method: "POST", token,
+      body: { project_path: "/home/student/project", revoked: true },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.revoked, true);
+  });
+
+  it("rejects missing project_path", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status } = await req("/portal/revoke", {
+      method: "POST", token, body: { revoked: true },
+    });
+    assert.equal(status, 400);
+  });
+
+  it("rejects missing revoked boolean", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status } = await req("/portal/revoke", {
+      method: "POST", token, body: { project_path: "/test" },
+    });
+    assert.equal(status, 400);
+  });
+
+  it("rejects non-boolean revoked", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const { status } = await req("/portal/revoke", {
+      method: "POST", token, body: { project_path: "/test", revoked: "yes" },
+    });
+    assert.equal(status, 400);
+  });
+
+  it("rejects unauthenticated request", async () => {
+    const { status } = await req("/portal/revoke", {
+      method: "POST", body: { project_path: "/test", revoked: true },
+    });
+    assert.equal(status, 401);
+  });
+});
+
+// ── Portal: Sessions ──
+
+describe("GET /portal/sessions", () => {
+  it("returns empty projects for new participant", async () => {
+    const token = makeToken("new@chibatech.dev");
+    bigqueryQueryResults = [];
+    const { status, data } = await req("/portal/sessions", { token });
+    assert.equal(status, 200);
+    assert.deepEqual(data.projects, []);
+    assert.equal(data.has_more, false);
+  });
+
+  it("returns sessions grouped by project", async () => {
+    const token = makeToken("student@chibatech.dev");
+    bigqueryQueryResults = [
+      { project_path: "/proj-a", session_id: "s1", first_timestamp: { value: "2026-01-01" }, last_timestamp: { value: "2026-01-02" }, record_count: 10, user_count: 5, assistant_count: 5, revoked: false },
+      { project_path: "/proj-a", session_id: "s2", first_timestamp: { value: "2026-01-03" }, last_timestamp: { value: "2026-01-04" }, record_count: 8, user_count: 4, assistant_count: 4, revoked: false },
+      { project_path: "/proj-b", session_id: "s3", first_timestamp: { value: "2026-01-05" }, last_timestamp: { value: "2026-01-06" }, record_count: 3, user_count: 1, assistant_count: 2, revoked: true },
+    ];
+    const { status, data } = await req("/portal/sessions", { token });
+    assert.equal(status, 200);
+    assert.equal(data.projects.length, 2);
+    const projA = data.projects.find((p) => p.project_path === "/proj-a");
+    assert.equal(projA.sessions.length, 2);
+    const projB = data.projects.find((p) => p.project_path === "/proj-b");
+    assert.equal(projB.sessions[0].revoked, true);
+  });
+
+  it("respects pagination limit", async () => {
+    const token = makeToken("student@chibatech.dev");
+    // Return limit+1 rows to trigger has_more
+    bigqueryQueryResults = Array.from({ length: 3 }, (_, i) => ({
+      project_path: "/proj", session_id: `s${i}`,
+      first_timestamp: { value: "2026-01-01" }, last_timestamp: { value: "2026-01-01" },
+      record_count: 1, user_count: 1, assistant_count: 0, revoked: false,
+    }));
+    const { data } = await req("/portal/sessions?limit=2", { token });
+    assert.equal(data.has_more, true);
+    assert.equal(data.limit, 2);
+    // Should only return 2 sessions (not the 3rd overflow row)
+    const totalSessions = data.projects.reduce((sum, p) => sum + p.sessions.length, 0);
+    assert.equal(totalSessions, 2);
+  });
+
+  it("includes session titles from Firestore", async () => {
+    const token = makeToken("student@chibatech.dev");
+    bigqueryQueryResults = [
+      { project_path: "/proj", session_id: "s1", first_timestamp: { value: "2026-01-01" }, last_timestamp: { value: "2026-01-01" }, record_count: 5, user_count: 2, assistant_count: 3, revoked: false },
+    ];
+    firestoreData["session_titles/student@chibatech.dev/s1/meta"] = { title: "Fix login bug" };
+    const { data } = await req("/portal/sessions", { token });
+    assert.equal(data.projects[0].sessions[0].title, "Fix login bug");
+  });
+});
+
+// ── Portal: Delete requests (GET) ──
+
+describe("GET /portal/delete-requests", () => {
+  it("returns empty list for new participant", async () => {
+    const token = makeToken("new@chibatech.dev");
+    const { status, data } = await req("/portal/delete-requests", { token });
+    assert.equal(status, 200);
+    assert.deepEqual(data.requests, []);
+  });
+
+  it("returns requests after creating them", async () => {
+    const token = makeToken("student@chibatech.dev");
+    // Create a request first
+    await req("/portal/delete-request", {
+      method: "POST", token,
+      body: { project_path: "/proj", session_id: "s1", reason: "test" },
+    });
+    const { status, data } = await req("/portal/delete-requests", { token });
+    assert.equal(status, 200);
+    assert.ok(data.requests.length >= 1);
+    assert.ok(data.requests.some((r) => r.project_path === "/proj"));
+  });
+});
+
+// ── Portal: Survey edge cases ──
+
+describe("survey edge cases", () => {
+  it("rejects empty completed survey", async () => {
+    const token = makeToken("student@chibatech.dev");
+    firestoreData["survey_config/current"] = { unlocked: ["pre_course"] };
+    const { status } = await req("/portal/survey", {
+      method: "POST", token,
+      body: { survey_id: "pre_course", responses: {}, completed: true },
+    });
+    assert.equal(status, 400);
+  });
+
+  it("rejects unknown survey_id", async () => {
+    const token = makeToken("student@chibatech.dev");
+    firestoreData["survey_config/current"] = { unlocked: ["pre_course"] };
+    const { status } = await req("/portal/survey", {
+      method: "POST", token,
+      body: { survey_id: "nonexistent_survey", responses: { q1: "a" } },
+    });
+    assert.equal(status, 403);
+  });
+
+  it("merges partial responses across submissions", async () => {
+    const token = makeToken("student@chibatech.dev");
+    firestoreData["survey_config/current"] = { unlocked: ["pre_course"] };
+
+    // First partial submission
+    await req("/portal/survey", {
+      method: "POST", token,
+      body: { survey_id: "pre_course", responses: { q1: "a" }, completed: false },
+    });
+    // Second partial submission
+    await req("/portal/survey", {
+      method: "POST", token,
+      body: { survey_id: "pre_course", responses: { q2: "b" }, completed: false },
+    });
+    // Check merged state
+    const stored = firestoreData["survey_responses/student@chibatech.dev/pre_course/data"];
+    assert.equal(stored.responses.q1, "a");
+    assert.equal(stored.responses.q2, "b");
+  });
+
+  it("rejects signing an incomplete survey", async () => {
+    const token = makeToken("student@chibatech.dev");
+    firestoreData["survey_config/current"] = { unlocked: ["pre_course"] };
+    // Submit but don't complete
+    await req("/portal/survey", {
+      method: "POST", token,
+      body: { survey_id: "pre_course", responses: { q1: "a" }, completed: false },
+    });
+    const { status } = await req("/portal/survey/sign", {
+      method: "POST", token, body: { survey_id: "pre_course" },
+    });
+    assert.equal(status, 400);
+  });
+
+  it("rejects double-signing a survey", async () => {
+    const token = makeToken("student@chibatech.dev");
+    firestoreData["survey_config/current"] = { unlocked: ["pre_course"] };
+    await req("/portal/survey", {
+      method: "POST", token,
+      body: { survey_id: "pre_course", responses: { q1: "a" }, completed: true },
+    });
+    await req("/portal/survey/sign", { method: "POST", token, body: { survey_id: "pre_course" } });
+    const { status } = await req("/portal/survey/sign", {
+      method: "POST", token, body: { survey_id: "pre_course" },
+    });
+    assert.equal(status, 403);
+  });
+});
+
+// ── Portal: Consent edge cases ──
+
+describe("consent edge cases", () => {
+  it("consent toggle still works after signing", async () => {
+    const token = makeToken("student@chibatech.dev");
+    await req("/portal/consent", { method: "POST", token, body: { research_use: true } });
+    await req("/portal/consent/sign", { method: "POST", token, body: {} });
+    const { status, data } = await req("/portal/consent", {
+      method: "POST", token, body: { research_use: false },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.research_use, false);
+    // Verify signing is preserved in stored state
+    const stored = firestoreData["consent/student@chibatech.dev"];
+    assert.ok(stored.signed_at, "signed_at should be preserved after toggle");
+    assert.equal(stored.research_use, false);
+  });
+});
+
+// ── Admin edge cases ──
+
+describe("admin allowlist edge cases", () => {
+  it("admin can remove domain", async () => {
+    const token = makeToken("admin@test.com");
+    firestoreData["allowlist/domains"] = { list: ["old.com", "keep.com"] };
+    const { status, data } = await req("/admin/allowlist/domain", {
+      method: "DELETE", token, body: { domain: "old.com" },
+    });
+    assert.equal(status, 200);
+    assert.ok(!data.domains.includes("old.com"));
+    assert.ok(data.domains.includes("keep.com"));
+  });
+
+  it("admin can remove email", async () => {
+    const token = makeToken("admin@test.com");
+    firestoreData["allowlist/emails"] = { list: ["remove@test.com", "keep@test.com"] };
+    const { status, data } = await req("/admin/allowlist/email", {
+      method: "DELETE", token, body: { allow_email: "remove@test.com" },
+    });
+    assert.equal(status, 200);
+    assert.ok(!data.emails.includes("remove@test.com"));
+    assert.ok(data.emails.includes("keep@test.com"));
+  });
+
+  it("adding duplicate domain is idempotent", async () => {
+    const token = makeToken("admin@test.com");
+    firestoreData["allowlist/domains"] = { list: ["existing.com"] };
+    const { data } = await req("/admin/allowlist/domain", {
+      method: "POST", token, body: { domain: "existing.com" },
+    });
+    assert.equal(data.domains.filter((d) => d === "existing.com").length, 1);
+  });
+
+  it("returns empty lists when no allowlist exists", async () => {
+    const token = makeToken("admin@test.com");
+    const { data } = await req("/admin/allowlist", { token });
+    assert.deepEqual(data.domains, []);
+    assert.deepEqual(data.emails, []);
+  });
+});
+
+// ── OTLP edge cases ──
 
 describe("POST /v1/logs", () => {
   it("rejects wrong secret", async () => {
@@ -712,6 +1075,42 @@ describe("POST /v1/logs", () => {
     assert.equal(bigqueryRows.length, 1);
     assert.equal(bigqueryRows[0].user_email, "s@test.com");
     assert.equal(bigqueryRows[0].event_type, "user_prompt");
+  });
+
+  it("handles empty resourceLogs array", async () => {
+    const { status } = await req("/v1/logs", {
+      method: "POST",
+      headers: { Authorization: "Bearer otlp-test-secret", "Content-Type": "application/json" },
+      body: { resourceLogs: [] },
+    });
+    assert.equal(status, 200);
+    assert.equal(bigqueryRows.length, 0);
+  });
+
+  it("handles missing attributes gracefully", async () => {
+    const { status } = await req("/v1/logs", {
+      method: "POST",
+      headers: { Authorization: "Bearer otlp-test-secret", "Content-Type": "application/json" },
+      body: {
+        resourceLogs: [{
+          resource: {},
+          scopeLogs: [{
+            logRecords: [{ timeUnixNano: "1700000000000000000", severityText: "WARN", attributes: [] }],
+          }],
+        }],
+      },
+    });
+    assert.equal(status, 200);
+    assert.equal(bigqueryRows.length, 1);
+    assert.equal(bigqueryRows[0].user_email, "");
+    assert.equal(bigqueryRows[0].event_type, "WARN"); // falls back to severityText
+  });
+
+  it("accepts traces and metrics as no-ops", async () => {
+    const traces = await req("/v1/traces", { method: "POST", body: {} });
+    assert.equal(traces.status, 200);
+    const metrics = await req("/v1/metrics", { method: "POST", body: {} });
+    assert.equal(metrics.status, 200);
   });
 });
 

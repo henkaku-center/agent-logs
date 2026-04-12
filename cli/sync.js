@@ -174,7 +174,7 @@ export async function sync() {
         } catch {
           continue;
         }
-        if (!ALLOWED_TYPES.has(parsed.type)) continue;
+        if (!parsed || !ALLOWED_TYPES.has(parsed.type)) continue;
         if (parsed.timestamp && new Date(parsed.timestamp).getTime() < consentedAtMs) continue;
         const stripped = stripToolResults(parsed);
         filteredLines.push(JSON.stringify(stripped));

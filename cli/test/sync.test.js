@@ -272,7 +272,7 @@ describe("line filtering", () => {
       if (!line.trim()) continue;
       let parsed;
       try { parsed = JSON.parse(line); } catch { continue; }
-      if (!ALLOWED_TYPES.has(parsed.type)) continue;
+      if (!parsed || !ALLOWED_TYPES.has(parsed.type)) continue;
       if (parsed.timestamp && new Date(parsed.timestamp).getTime() < consentedAtMs) continue;
       filtered.push(JSON.stringify(stripToolResults(parsed)));
     }
@@ -289,14 +289,18 @@ describe("line filtering", () => {
     assert.equal(result.length, 3);
   });
 
-  it("excludes disallowed record types", () => {
-    const lines = [
-      JSON.stringify({ type: "file-history-snapshot", snapshot: "huge data" }),
-      JSON.stringify({ type: "last-prompt", lastPrompt: "cached" }),
-      JSON.stringify({ type: "queue-operation" }),
-      JSON.stringify({ type: "attribution-snapshot" }),
-      JSON.stringify({ type: "content-replacement" }),
+  it("excludes all disallowed record types seen in real data", () => {
+    const excluded = [
+      { type: "file-history-snapshot", messageId: "abc", snapshot: {"/tmp/x": "huge"}, isSnapshotUpdate: false },
+      { type: "last-prompt", lastPrompt: "cached prompt", sessionId: "sess1" },
+      { type: "queue-operation", operation: "dequeue", timestamp: "2026-01-01T00:00:00Z", sessionId: "sess1" },
+      { type: "attribution-snapshot" },
+      { type: "content-replacement" },
+      { type: "permission-mode", permissionMode: "acceptEdits", sessionId: "sess1" },
+      { type: "attachment", attachment: { type: "mcp_instructions_delta" }, parentUuid: "xxx" },
+      { type: "pr-link", sessionId: "sess1", prNumber: 42, prUrl: "https://github.com/org/repo/pull/42", prRepository: "org/repo" },
     ];
+    const lines = excluded.map((r) => JSON.stringify(r));
     const result = filterLines(lines);
     assert.equal(result.length, 0);
   });
@@ -369,5 +373,130 @@ describe("line filtering", () => {
     const result = filterLines(lines);
     assert.equal(result.length, 3);
   });
+
+  it("includes progress records", () => {
+    const lines = [
+      JSON.stringify({
+        type: "progress",
+        data: { type: "hook_output", hookEvent: "Stop", hookName: "agent-logs sync", command: "agent-logs sync" },
+        toolUseID: "toolu_abc",
+        timestamp: "2026-04-01T00:00:00Z",
+      }),
+    ];
+    const result = filterLines(lines);
+    assert.equal(result.length, 1);
+  });
+
+  it("consent timestamp boundary: exact match passes through", () => {
+    const exactTime = "2026-03-01T12:00:00.000Z";
+    const consentedAt = new Date(exactTime).getTime();
+    const lines = [
+      JSON.stringify({ type: "user", timestamp: exactTime, message: { content: "at boundary" } }),
+    ];
+    // timestamp == consentedAt → NOT less than → passes through
+    const result = filterLines(lines, consentedAt);
+    assert.equal(result.length, 1, "record at exact consent time should be included");
+  });
+
+  it("excludes records with missing type field", () => {
+    const lines = [
+      JSON.stringify({ message: { content: "no type field" } }),
+      JSON.stringify({ type: null, message: { content: "null type" } }),
+    ];
+    const result = filterLines(lines);
+    assert.equal(result.length, 0);
+  });
+
+  it("excludes non-object JSON lines", () => {
+    const lines = ["42", '"a string"', "[1,2,3]", "true", "null"];
+    const result = filterLines(lines);
+    assert.equal(result.length, 0);
+  });
 });
+
+// ── Real-world record shapes ──
+
+describe("stripToolResults with real-world content shapes", () => {
+  it("strips tool_result with base64 image content", () => {
+    const record = {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_img",
+            content: [
+              { type: "text", text: "Screenshot of page" },
+              { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo".repeat(1000) } },
+            ],
+          },
+        ],
+      },
+    };
+    const result = stripToolResults(record);
+    assert.deepEqual(result.message.content[0], { type: "tool_result", tool_use_id: "toolu_img" });
+    assert.equal(result.message.content[0].content, undefined);
+  });
+
+  it("strips tool_result with string content (not array)", () => {
+    const record = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "toolu_bash", content: "$ ls\nfile1.js\nfile2.js" },
+        ],
+      },
+    };
+    const result = stripToolResults(record);
+    assert.deepEqual(result.message.content[0], { type: "tool_result", tool_use_id: "toolu_bash" });
+  });
+
+  it("preserves tool_use blocks with full input (Bash command)", () => {
+    const record = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "toolu_abc", name: "Bash", input: { command: "npm test", description: "run tests" } },
+        ],
+      },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result.message.content[0].name, "Bash");
+    assert.equal(result.message.content[0].input.command, "npm test");
+  });
+
+  it("preserves tool_use blocks with full input (Edit)", () => {
+    const record = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "toolu_def", name: "Edit", input: { file_path: "/tmp/x.js", old_string: "foo", new_string: "bar", replace_all: false } },
+        ],
+      },
+    };
+    const result = stripToolResults(record);
+    assert.deepEqual(result.message.content[0].input, { file_path: "/tmp/x.js", old_string: "foo", new_string: "bar", replace_all: false });
+  });
+
+  it("handles empty content array", () => {
+    const record = { type: "assistant", message: { content: [] } };
+    const result = stripToolResults(record);
+    assert.deepEqual(result.message.content, []);
+  });
+
+  it("mutates the input record (not a copy)", () => {
+    const record = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "tu_1", content: "data" },
+        ],
+      },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result, record); // same reference
+    assert.equal(record.message.content[0].content, undefined);
+  });
+});
+
 
