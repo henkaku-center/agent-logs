@@ -60,6 +60,12 @@ function signResearchToken(anonId) {
   return jwt.sign({ anon_id: anonId, type: "research" }, JWT_SECRET);
 }
 
+async function resolveAnonId(email) {
+  const sealedDoc = await firestore.doc(`sealed_mapping/${hashEmail(email)}`).get();
+  if (!sealedDoc.exists) return null;
+  return unsealMapping(sealedDoc.data()).anon_id;
+}
+
 /* ── Phase 1 structural anonymization ── */
 
 function anonymizeRecord(jsonString) {
@@ -591,6 +597,139 @@ app.delete("/admin/allowlist/email", async (req, res) => {
   res.json({ status: "ok", emails: list });
 });
 
+/* ── Role management (instructor/researcher access to BigQuery views) ── */
+
+const ROLE_VIEW_MAP = {
+  instructor: `${PROJECT_ID}.${DATASET}.logs_view`,
+  researcher: `${PROJECT_ID}.${DATASET}.research_logs_view`,
+};
+
+async function syncViewAccess(role) {
+  const viewId = ROLE_VIEW_MAP[role];
+  if (!viewId) return;
+
+  const doc = await firestore.doc(`roles/${role}s`).get();
+  const emails = doc.exists ? doc.data().list || [] : [];
+
+  // Grant dataViewer on the specific view
+  const table = viewId.split(".").pop();
+  const view = bigquery.dataset(DATASET).table(table);
+
+  const [policy] = await view.getIamPolicy();
+  policy.bindings = (policy.bindings || []).filter(
+    (b) => b.role !== "roles/bigquery.dataViewer"
+  );
+  if (emails.length > 0) {
+    policy.bindings.push({
+      role: "roles/bigquery.dataViewer",
+      members: emails.map((e) => `user:${e}`),
+    });
+  }
+  await view.setIamPolicy(policy);
+
+  // Grant bigquery.jobUser at project level so they can run queries
+  const auth = new google.auth.GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
+  const crm = google.cloudresourcemanager({ version: "v1", auth });
+  const { data: projPolicy } = await crm.projects.getIamPolicy({
+    resource: PROJECT_ID,
+    requestBody: {},
+  });
+
+  const jobBinding = (projPolicy.bindings || []).find((b) => b.role === "roles/bigquery.jobUser") || { role: "roles/bigquery.jobUser", members: [] };
+  if (!projPolicy.bindings) projPolicy.bindings = [];
+  if (!projPolicy.bindings.includes(jobBinding)) projPolicy.bindings.push(jobBinding);
+
+  // Collect all role emails (instructors + researchers) for jobUser
+  const allRoleDocs = await firestore.getAll(firestore.doc("roles/instructors"), firestore.doc("roles/researchers"));
+  const allRoleEmails = new Set();
+  for (const d of allRoleDocs) {
+    if (d.exists) for (const e of d.data().list || []) allRoleEmails.add(`user:${e}`);
+  }
+
+  // Keep non-user members (service accounts), replace user members with our list
+  jobBinding.members = [
+    ...jobBinding.members.filter((m) => !m.startsWith("user:")),
+    ...allRoleEmails,
+  ];
+
+  await crm.projects.setIamPolicy({
+    resource: PROJECT_ID,
+    requestBody: { policy: projPolicy },
+  });
+}
+
+app.get("/admin/roles", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const [instDoc, resDoc] = await firestore.getAll(
+    firestore.doc("roles/instructors"),
+    firestore.doc("roles/researchers"),
+  );
+  res.json({
+    instructors: instDoc.exists ? instDoc.data().list : [],
+    researchers: resDoc.exists ? resDoc.data().list : [],
+  });
+});
+
+app.post("/admin/roles/:role", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const { role } = req.params;
+  if (!ROLE_VIEW_MAP[role]) return res.status(400).json({ error: "Role must be 'instructor' or 'researcher'" });
+
+  const { email: targetEmail } = req.body;
+  if (!targetEmail) return res.status(400).json({ error: "Missing email" });
+
+  const ref = firestore.doc(`roles/${role}s`);
+  const doc = await ref.get();
+  const list = doc.exists ? doc.data().list || [] : [];
+  const normalized = targetEmail.toLowerCase().trim();
+  if (!list.includes(normalized)) {
+    list.push(normalized);
+    await ref.set({ list });
+  }
+
+  try { await syncViewAccess(role); } catch (err) {
+    console.error(`Failed to sync ${role} view access:`, err.message);
+  }
+
+  res.json({ status: "ok", [`${role}s`]: list });
+});
+
+app.delete("/admin/roles/:role", async (req, res) => {
+  let email;
+  try { email = authenticate(req); } catch (err) {
+    return res.status(401).json({ error: err.message });
+  }
+  if (!isAdmin(email)) return res.status(403).json({ error: "Admin access required" });
+
+  const { role } = req.params;
+  if (!ROLE_VIEW_MAP[role]) return res.status(400).json({ error: "Role must be 'instructor' or 'researcher'" });
+
+  const { email: targetEmail } = req.body;
+  if (!targetEmail) return res.status(400).json({ error: "Missing email" });
+
+  const ref = firestore.doc(`roles/${role}s`);
+  const doc = await ref.get();
+  if (!doc.exists) return res.json({ status: "ok", [`${role}s`]: [] });
+  const list = (doc.data().list || []).filter((e) => e !== targetEmail.toLowerCase().trim());
+  await ref.set({ list });
+
+  try { await syncViewAccess(role); } catch (err) {
+    console.error(`Failed to sync ${role} view access:`, err.message);
+  }
+
+  res.json({ status: "ok", [`${role}s`]: list });
+});
+
 /* ── Portal helpers ── */
 
 /** Auth middleware — extracts email from JWT or returns 401 */
@@ -727,40 +866,43 @@ app.post("/portal/consent", async (req, res) => {
 
   await ref.set({ ...existing, ...update }, { merge: true });
 
-  // Backfill: when opting IN, copy existing course.logs rows to research.logs
   let backfill_count = 0;
-  if (research_use && !wasOptedIn && SEALED_MAPPING_KEY) {
+  if (SEALED_MAPPING_KEY && research_use !== wasOptedIn) {
     try {
-      const docId = hashEmail(email);
-      const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
-      if (sealedDoc.exists) {
-        const { anon_id } = unsealMapping(sealedDoc.data());
-        const consentedAt = update.consented_at || existing.consented_at;
-        const sinceDate = consentedAt instanceof Date ? consentedAt : consentedAt?.toDate?.() || new Date(0);
-
-        // Query existing course.logs rows from consent date onward
-        const [rows] = await bigquery.query({
-          query: `SELECT project_path, session_id, file_name, record_type, timestamp, version, data
-                  FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\`
-                  WHERE participant_id = @email AND timestamp >= @since
-                  ORDER BY timestamp ASC`,
-          params: { email, since: sinceDate.toISOString() },
-        });
-
-        if (rows.length > 0) {
-          // Check which sessions already exist in research.logs to avoid duplicates
-          const sessionIds = [...new Set(rows.map((r) => r.session_id))];
-          const [existing_research] = await bigquery.query({
-            query: `SELECT DISTINCT session_id FROM \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\`
-                    WHERE anon_id = @anon_id AND session_id IN UNNEST(@session_ids)`,
-            params: { anon_id, session_ids: sessionIds },
+      const anonId = await resolveAnonId(email);
+      if (anonId) {
+        if (!research_use) {
+          // Opt-out: flag all research rows as revoked
+          await bigquery.query({
+            query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = true WHERE anon_id = @anon_id`,
+            params: { anon_id: anonId },
           });
-          const existingSessions = new Set(existing_research.map((r) => r.session_id));
+        } else {
+          // Opt-in: restore any previously revoked rows
+          if (wasOptedIn === false) {
+            await bigquery.query({
+              query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = false WHERE anon_id = @anon_id`,
+              params: { anon_id: anonId },
+            });
+          }
 
-          const newRows = rows
-            .filter((r) => !existingSessions.has(r.session_id))
-            .map((r) => ({
-              anon_id,
+          // Backfill: copy course.logs rows not yet in research.logs
+          const consentedAt = update.consented_at || existing.consented_at;
+          const sinceDate = consentedAt instanceof Date ? consentedAt : consentedAt?.toDate?.() || new Date(0);
+
+          const [rows] = await bigquery.query({
+            query: `SELECT c.project_path, c.session_id, c.file_name, c.record_type, c.timestamp, c.version, c.data
+                    FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\` c
+                    LEFT JOIN \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` r
+                      ON r.anon_id = @anon_id AND r.session_id = c.session_id
+                    WHERE c.participant_id = @email AND c.timestamp >= @since AND r.session_id IS NULL
+                    ORDER BY c.timestamp ASC`,
+            params: { email, since: sinceDate.toISOString(), anon_id: anonId },
+          });
+
+          if (rows.length > 0) {
+            const newRows = rows.map((r) => ({
+              anon_id: anonId,
               project_hash: createHash("sha256").update(r.project_path).digest("hex"),
               session_id: r.session_id,
               file_name: r.file_name,
@@ -770,47 +912,13 @@ app.post("/portal/consent", async (req, res) => {
               data: anonymizeRecord(r.data),
               revoked: false,
             }));
-
-          if (newRows.length > 0) {
             await bigquery.dataset(DATASET).table(RESEARCH_TABLE).insert(newRows);
             backfill_count = newRows.length;
           }
         }
       }
     } catch (err) {
-      console.error("Research backfill failed:", err.message);
-    }
-  }
-
-  // Revoke/restore existing research rows when toggling off/on
-  if (!research_use && wasOptedIn && SEALED_MAPPING_KEY) {
-    try {
-      const docId = hashEmail(email);
-      const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
-      if (sealedDoc.exists) {
-        const { anon_id } = unsealMapping(sealedDoc.data());
-        await bigquery.query({
-          query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = true WHERE anon_id = @anon_id`,
-          params: { anon_id },
-        });
-      }
-    } catch (err) {
-      console.error("Research revoke on opt-out failed:", err.message);
-    }
-  } else if (research_use && wasOptedIn === false && SEALED_MAPPING_KEY) {
-    // Re-opting in: clear revoked flag on existing rows
-    try {
-      const docId = hashEmail(email);
-      const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
-      if (sealedDoc.exists) {
-        const { anon_id } = unsealMapping(sealedDoc.data());
-        await bigquery.query({
-          query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = false WHERE anon_id = @anon_id`,
-          params: { anon_id },
-        });
-      }
-    } catch (err) {
-      console.error("Research restore on re-opt-in failed:", err.message);
+      console.error("Research consent sync failed:", err.message);
     }
   }
 
@@ -1020,15 +1128,13 @@ app.post("/portal/revoke", async (req, res) => {
     // Cascade to research.logs
     if (SEALED_MAPPING_KEY) {
       try {
-        const docId = hashEmail(email);
-        const sealedDoc = await firestore.doc(`sealed_mapping/${docId}`).get();
-        if (sealedDoc.exists) {
-          const { anon_id } = unsealMapping(sealedDoc.data());
+        const anonId = await resolveAnonId(email);
+        if (anonId) {
           const projectHash = createHash("sha256").update(project_path).digest("hex");
           const researchWhere = session_id
             ? `anon_id = @anon_id AND project_hash = @project_hash AND session_id = @session_id`
             : `anon_id = @anon_id AND project_hash = @project_hash`;
-          const researchParams = { anon_id, project_hash: projectHash };
+          const researchParams = { anon_id: anonId, project_hash: projectHash };
           if (session_id) researchParams.session_id = session_id;
 
           await bigquery.query({

@@ -403,6 +403,40 @@ switch (command) {
         console.log(`Removed ${arg}. Emails: ${data.emails.join(", ")}`);
         break;
       }
+      case "roles": {
+        const data = await authFetch("/admin/roles");
+        console.log("Instructors (course.logs_view access):");
+        for (const e of data.instructors) console.log(`  ${e}`);
+        if (data.instructors.length === 0) console.log("  (none)");
+        console.log("\nResearchers (research_logs_view access):");
+        for (const e of data.researchers) console.log(`  ${e}`);
+        if (data.researchers.length === 0) console.log("  (none)");
+        break;
+      }
+      case "add-instructor": {
+        if (!arg) { console.error("Usage: agent-logs admin add-instructor <email>"); process.exit(1); }
+        const data = await authFetch("/admin/roles/instructor", "POST", { email: arg });
+        console.log(`Added instructor ${arg}. Instructors: ${data.instructors.join(", ")}`);
+        break;
+      }
+      case "remove-instructor": {
+        if (!arg) { console.error("Usage: agent-logs admin remove-instructor <email>"); process.exit(1); }
+        const data = await authFetch("/admin/roles/instructor", "DELETE", { email: arg });
+        console.log(`Removed instructor ${arg}. Instructors: ${data.instructors.join(", ")}`);
+        break;
+      }
+      case "add-researcher": {
+        if (!arg) { console.error("Usage: agent-logs admin add-researcher <email>"); process.exit(1); }
+        const data = await authFetch("/admin/roles/researcher", "POST", { email: arg });
+        console.log(`Added researcher ${arg}. Researchers: ${data.researchers.join(", ")}`);
+        break;
+      }
+      case "remove-researcher": {
+        if (!arg) { console.error("Usage: agent-logs admin remove-researcher <email>"); process.exit(1); }
+        const data = await authFetch("/admin/roles/researcher", "DELETE", { email: arg });
+        console.log(`Removed researcher ${arg}. Researchers: ${data.researchers.join(", ")}`);
+        break;
+      }
       default:
         console.log(`Usage: agent-logs admin <command>
 
@@ -411,7 +445,12 @@ Commands:
   add-domain <domain>      Allow all emails from a domain
   remove-domain <domain>   Remove a domain
   add-email <email>        Allow a specific email address
-  remove-email <email>     Remove a specific email address`);
+  remove-email <email>     Remove a specific email address
+  roles                    Show instructor and researcher assignments
+  add-instructor <email>   Grant BigQuery access to course.logs_view
+  remove-instructor <email> Revoke instructor access
+  add-researcher <email>   Grant BigQuery access to research_logs_view
+  remove-researcher <email> Revoke researcher access`);
     }
     break;
   }

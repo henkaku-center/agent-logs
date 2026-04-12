@@ -149,6 +149,20 @@ function makeToken(email) {
   return jwt.sign({ email }, JWT_SECRET, { expiresIn: "1h" });
 }
 
+function seedSealedMapping(email, anonId) {
+  const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
+  const plaintext = JSON.stringify({ email, anon_id: anonId });
+  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const emailHash = createHash("sha256").update(email).digest("hex");
+  firestoreData[`sealed_mapping/${emailHash}`] = {
+    iv: iv.toString("hex"),
+    ciphertext: ciphertext.toString("hex"),
+    tag: cipher.getAuthTag().toString("hex"),
+  };
+}
+
 let server;
 let baseUrl;
 
@@ -975,18 +989,7 @@ describe("POST /portal/revoke", () => {
     const token = makeToken(email);
     const anonId = "anon-uuid-1234";
 
-    // Create sealed mapping for this email
-    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
-    const plaintext = JSON.stringify({ email, anon_id: anonId });
-    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const emailHash = createHash("sha256").update(email).digest("hex");
-    firestoreData[`sealed_mapping/${emailHash}`] = {
-      iv: iv.toString("hex"),
-      ciphertext: ciphertext.toString("hex"),
-      tag: cipher.getAuthTag().toString("hex"),
-    };
+    seedSealedMapping(email, anonId);
 
     bigqueryQueries.length = 0;
     const { status, data } = await req("/portal/revoke", {
@@ -1181,20 +1184,8 @@ describe("consent edge cases", () => {
     const token = makeToken(email);
     const anonId = "backfill-anon-uuid";
 
-    // Create sealed mapping
-    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
-    const plaintext = JSON.stringify({ email, anon_id: anonId });
-    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const emailHash = createHash("sha256").update(email).digest("hex");
-    firestoreData[`sealed_mapping/${emailHash}`] = {
-      iv: iv.toString("hex"),
-      ciphertext: ciphertext.toString("hex"),
-      tag: cipher.getAuthTag().toString("hex"),
-    };
+    seedSealedMapping(email, anonId);
 
-    // Mock: first query returns course.logs rows, second returns no existing research rows
     const courseRow = {
       project_path: "/home/student/proj",
       session_id: "s1",
@@ -1204,17 +1195,11 @@ describe("consent edge cases", () => {
       version: "2.1.92",
       data: JSON.stringify({ type: "user", cwd: "/home/student/proj", message: { content: "hello" } }),
     };
-    // bigqueryQueries tracks calls; bigqueryQueryResults is returned for ALL queries
-    // We need to return different results for different queries
-    let queryCallCount = 0;
     const origQuery = mockBigQuery.query;
     mockBigQuery.query = async ({ query, params }) => {
       bigqueryQueries.push({ query, params });
-      queryCallCount++;
-      // First query: SELECT from course.logs (backfill data)
-      if (query.includes("FROM") && query.includes("course.logs") && !query.includes("UPDATE")) return [[courseRow]];
-      // Second query: SELECT DISTINCT session_id from research_logs (dedup check)
-      if (query.includes("DISTINCT session_id")) return [[]];
+      // Backfill LEFT JOIN query returns rows not yet in research.logs
+      if (query.includes("LEFT JOIN")) return [[courseRow]];
       return [[]];
     };
 
@@ -1240,18 +1225,7 @@ describe("consent edge cases", () => {
     const token = makeToken(email);
     const anonId = "optout-anon-uuid";
 
-    // Create sealed mapping
-    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
-    const plaintext = JSON.stringify({ email, anon_id: anonId });
-    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const emailHash = createHash("sha256").update(email).digest("hex");
-    firestoreData[`sealed_mapping/${emailHash}`] = {
-      iv: iv.toString("hex"),
-      ciphertext: ciphertext.toString("hex"),
-      tag: cipher.getAuthTag().toString("hex"),
-    };
+    seedSealedMapping(email, anonId);
 
     // Set existing consent as opted-in
     firestoreData[`consent/${email}`] = { research_use: true, consented_at: new Date() };
@@ -1275,18 +1249,7 @@ describe("consent edge cases", () => {
     const token = makeToken(email);
     const anonId = "reoptin-anon-uuid";
 
-    // Create sealed mapping
-    const sealKey = Buffer.from(process.env.SEALED_MAPPING_KEY, "hex");
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", sealKey, iv);
-    const plaintext = JSON.stringify({ email, anon_id: anonId });
-    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const emailHash = createHash("sha256").update(email).digest("hex");
-    firestoreData[`sealed_mapping/${emailHash}`] = {
-      iv: iv.toString("hex"),
-      ciphertext: ciphertext.toString("hex"),
-      tag: cipher.getAuthTag().toString("hex"),
-    };
+    seedSealedMapping(email, anonId);
 
     // Set existing consent as opted-out (was previously in)
     firestoreData[`consent/${email}`] = { research_use: false, consented_at: new Date() };
