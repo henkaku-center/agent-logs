@@ -131,6 +131,8 @@ strong { font-weight: 700; }
   padding: 4px 12px;
   cursor: pointer;
   letter-spacing: 0.03em;
+  width: 80px;
+  text-align: center;
 }
 .lang-toggle:hover {
   border-color: var(--white);
