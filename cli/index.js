@@ -186,11 +186,7 @@ switch (command) {
 
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
     const bold = (s) => `\x1b[1m${s}\x1b[0m`;
-    const green = (s) => `\x1b[32m${s}\x1b[0m`;
-    const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
-    const blue = (s) => `\x1b[34m${s}\x1b[0m`;
     const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
-    const line = dim("─".repeat(52));
 
     // Not logged in or expired — initiate login
     if (!readToken()?.token) {
@@ -206,9 +202,37 @@ switch (command) {
       }
     }
 
+    // Check consent form is signed
+    const storedToken = readToken();
+    try {
+      const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
+        headers: { Authorization: `Bearer ${storedToken.token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (resp.ok) {
+        const consent = await resp.json();
+        if (!consent.signed_at) {
+          const cols = process.stdout.columns || 89;
+          console.log([
+            cyan("─".repeat(cols)),
+            cyan(" Agent Logs — Consent Required"),
+            ``,
+            ` You must sign the informed consent form before using Claude.`,
+            ` Visit the portal to read and sign:`,
+            ``,
+            `   \x1b[4;36mhttps://agent-logs.chibatech.dev/portal.html\x1b[0m`,
+            ``,
+            ` ${dim(`Logged in as ${storedToken.email}`)}`,
+            cyan("─".repeat(cols)),
+          ].join("\n"));
+          process.exit(1);
+        }
+      }
+    } catch {}
+
     // Read projects after potential login, sync consent from server
     const projects = readProjects();
-    const token = readToken()?.token;
+    const token = storedToken?.token;
     if (token && await syncConsent(projects, token, INGESTION_URL)) {
       writeProjects(projects);
     }
