@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, relative } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
-import { readProjects, readCursors, writeCursors, readToken, writeLastSync } from "./config.js";
+import { readProjects, writeProjects, readCursors, writeCursors, readToken, writeLastSync } from "./config.js";
 import { getToken } from "./auth.js";
 
 const CLAUDE_DIR = join(homedir(), ".claude", "projects");
@@ -235,4 +235,20 @@ export async function sync() {
     lines_skipped: totalSkipped,
     errors: errors.length > 0 ? errors : undefined,
   });
+
+  // Sync consent state from server (piggyback on sync hook)
+  try {
+    const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (resp.ok) {
+      const consent = await resp.json();
+      const fresh = readProjects();
+      if (fresh.research_use !== (consent.research_use || false)) {
+        fresh.research_use = consent.research_use || false;
+        writeProjects(fresh);
+      }
+    }
+  } catch {}
 }
