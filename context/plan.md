@@ -20,7 +20,7 @@ Claude Code starts in new directory
 └──────────┬─────────────────────┘
            │
            ▼
-~/.config/agent-logs/projects.yaml
+~/.config/agent-logs/projects.json
   (tracks per-directory consent)
 
            │
@@ -50,7 +50,7 @@ All backend services scale to zero. No always-on instances.
 |---------|------|------------------|
 | **BigQuery** (`course` dataset) | Identified session logs | Append-native (Storage Write API), SQL queries for instructors, 2 TiB/month free ingestion |
 | **BigQuery** (`research` dataset) | Anonymized session logs (Research-use) | Same benefits; separate dataset with restricted IAM; Phase 1 anonymization applied at write time |
-| **Firestore** | Consent state, identity mapping, offset ledger | Low-latency transactional lookups, pay-per-operation, no instance to manage |
+| **Firestore** | Consent state, sealed identity mapping, offset ledger | Low-latency transactional lookups, pay-per-operation, no instance to manage |
 | **Cloud Run** | Ingestion endpoint | Scales to zero between uploads, ~$10/3 months at expected load |
 
 Estimated cost for 300 premium-tier users over 3 months: **~$15** (dominated by Cloud Run compute). BigQuery ingestion is free under the Storage Write API's 2 TiB/month allowance. Firestore operations total a few dollars. No idle costs during nights, weekends, or breaks.
@@ -189,16 +189,18 @@ The install script downloads the `agent-logs` binary and places it in PATH. Then
 agent-logs login
 ```
 
-- Authenticates with the student's Google account (OAuth flow, stores refresh token). This must be the same email address used for the student's Claude Enterprise seat.
+- Authenticates via email verification code (magic code flow). The server sends a 6-digit code to the student's email, the student enters it, and the server returns a JWT (90-day expiry). This must be the same email address used for the student's Claude Enterprise seat.
+- Issues a **research token** — a signed JWT containing the student's anonymous identifier (`{anon_id, type: "research"}`). The `anon_id` is a random UUID generated on first login and reissued on subsequent logins. The email-to-anon_id mapping is stored encrypted in Firestore (see sealed identity mapping below).
 - Fetches the student's global consent status from the server (Research-use enrollment, if any)
 - Registers four Claude Code hooks in `~/.claude/settings.json` (see hook configuration below)
-- Creates `~/.config/agent-logs/projects.yaml`
+- Creates `~/.config/agent-logs/projects.json`
+- Stores auth token, email, and research token in `~/.config/agent-logs/token.json` (mode 0600)
 
 No cron job, launchd plist, or Windows Task Scheduler is needed. Sync is driven entirely by Claude Code hooks, making installation cross-platform (macOS, Linux, Windows) with no platform-specific logic.
 
 ### Claude Code hooks: status message and consent prompt
 
-The `SessionStart` hook (matcher: `startup`) fires at the start of new sessions, after Claude Code's own startup sequence (header, workspace trust dialog). It reads `cwd` from the JSON input and checks `projects.yaml` for the project directory.
+The `SessionStart` hook (matcher: `startup`) fires at the start of new sessions, after Claude Code's own startup sequence (header, workspace trust dialog). It reads `cwd` from the JSON input and checks `projects.json` for the project directory.
 
 The startup sequence is:
 
@@ -253,7 +255,7 @@ agent-logs withdraw       # stop sharing logs for the current project directory
 
 The CLI is intentionally minimal. Project-level consent is managed here. Research-use enrollment, session browsing, delete requests, and insight reports are handled through the web portal.
 
-- **`agent-logs consent`** moves the current directory to the `shared` list in `projects.yaml` (from `withdrawn` or not-in-file). This is how a student opts back in after withdrawing, or explicitly shares a project without waiting for the next session start prompt.
+- **`agent-logs consent`** moves the current directory to the `shared` list in `projects.json` (from `withdrawn` or not-in-file). This is how a student opts back in after withdrawing, or explicitly shares a project without waiting for the next session start prompt.
 - **`agent-logs withdraw`** moves the current directory from `shared` to `withdrawn`. The project will not be synced and the consent prompt will not reappear. Data collected before withdrawal remains on the server — the student can submit a delete request via the portal to remove it.
 
 #### Hook configuration
@@ -316,19 +318,35 @@ Four hooks, four roles:
 - **`SubagentStop`** (sync): syncs the completing subagent's JSONL file (`{session-id}/subagents/agent-{uuid}.jsonl`). Subagent JSONL files are written during execution (same append pattern as the parent), so the sync picks up all subagent data as soon as the subagent finishes. Runs the same `agent-logs sync` command — the sync process already discovers subagent files via the cursor mechanism, so no separate logic is needed.
 - **`SessionEnd`** (sync): final flush on exit. Blocks briefly to ensure the last turn's data is sent before the process terminates.
 
-### Config file
+### Config files
 
-`~/.config/agent-logs/projects.yaml`:
+`~/.config/agent-logs/projects.json`:
 
-```yaml
-participant_id: tanaka@chibatech.dev   # set during agent-logs login
-research_use: true                        # cached from server, refreshed on login
-shared:
-  - /home/tanaka/coursework/web3-project
-  - /home/tanaka/coursework/aps-studio
-withdrawn:
-  - /home/tanaka/old-project
+```json
+{
+  "participant_id": "tanaka@chibatech.dev",
+  "research_use": true,
+  "shared": [
+    { "path": "/home/tanaka/coursework/web3-project", "consented_at": "2026-04-01T00:00:00Z" },
+    { "path": "/home/tanaka/coursework/aps-studio", "consented_at": "2026-04-02T00:00:00Z" }
+  ],
+  "withdrawn": [
+    "/home/tanaka/old-project"
+  ]
+}
 ```
+
+`~/.config/agent-logs/token.json` (mode 0600):
+
+```json
+{
+  "token": "eyJhbG...",
+  "email": "tanaka@chibatech.dev",
+  "research_token": "eyJhbG..."
+}
+```
+
+The `research_token` is a signed JWT containing `{anon_id, type: "research"}`. It is issued at login and reissued on every subsequent login (same `anon_id`). The auth `token` is a JWT containing `{email}` with 90-day expiry. Both are sent with sync requests.
 
 Three states for any project directory:
 
@@ -342,7 +360,7 @@ Three states for any project directory:
 
 The sync process:
 
-1. Reads `projects.yaml` to find shared project paths
+1. Reads `projects.json` to find shared project paths
 2. Maps each path to its Claude Code project directory in `~/.claude/projects/`
 3. Lists all JSONL files in each shared project directory, including subagent files in `{session-id}/subagents/agent-*.jsonl`
 4. For each file, reads from the last-sent byte offset (tracked in `~/.config/agent-logs/cursors.json`)
@@ -389,7 +407,7 @@ Each entry tracks the byte offset up to which the file has been successfully sen
 
 **Interrupts and crashes**: if the user interrupts a turn (Ctrl+C), the `Stop` hook does not fire for that turn — but the data is already in the JSONL file and will be picked up by the next successful sync. If Claude Code crashes, the `SessionEnd` hook does not fire — but the JSONL file survives, and the next session's hooks will sync all unsent data via the byte offset cursor. The only data loss scenario is if a student's machine is destroyed and they never open Claude Code again.
 
-**Consent withdrawal**: `agent-logs withdraw` moves the project from `shared` to `withdrawn` in `projects.yaml` and deletes its cursor entries. The sync never reads files from projects not in the `shared` list. Previously synced data remains on the server (submit a delete request via the portal to remove it). `agent-logs consent` moves the project back to `shared` and syncing resumes from where it left off.
+**Consent withdrawal**: `agent-logs withdraw` moves the project from `shared` to `withdrawn` in `projects.json` and deletes its cursor entries. The sync never reads files from projects not in the `shared` list. Previously synced data remains on the server (submit a delete request via the portal to remove it). `agent-logs consent` moves the project back to `shared` and syncing resumes from where it left off.
 
 Only files within shared project directories are read. The sync process never accesses unlisted project directories.
 
@@ -403,7 +421,7 @@ Cloud Run service. Receives authenticated uploads from student sync agents. Each
 
 ```
 POST /ingest
-Authorization: Bearer {google-identity-token}
+Authorization: Bearer {jwt-token}
 Content-Type: application/json
 
 {
@@ -411,21 +429,25 @@ Content-Type: application/json
   "session_id": "163c2520-6e45-4944-92ec-a68ffd6e2f0a",
   "file_name": "163c2520-6e45-4944-92ec-a68ffd6e2f0a.jsonl",
   "offset": 48172,
-  "lines": ["{ ... }", "{ ... }"]
+  "file_offset": 52480,
+  "lines": ["{ ... }", "{ ... }"],
+  "research_token": "eyJhbG..."
 }
 ```
 
+The `offset` is the client's cursor position before this batch. `file_offset` is the file position after this batch (computed client-side). `research_token` is optional — present if the student has logged in with the current CLI version.
+
 ### Processing pipeline
 
-1. **Authenticate**: verify Google identity token, extract student email. The ingestion service checks that the email matches a known Claude Enterprise seat allocation. Uploads from unrecognized emails are rejected.
-2. **Deduplicate**: read the offset ledger for this session from Firestore (`offsets/{participant_id}/{session_id}`). Compare the client's `offset` against the server's recorded offset. Three cases:
-   - **Offset matches**: normal append — accept all lines.
-   - **Offset < server offset** (duplicate/re-upload after cursor reset): skip lines the server already has, accept only new lines beyond server offset. This makes ingestion idempotent.
-   - **Offset > server offset** (gap — should not happen with append-only files): reject the upload and return the server's current offset so the client can re-align.
-3. **Write to `course.logs`** (BigQuery, identified): insert rows via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row with columns: `participant_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data` (the original JSON line as a STRING or JSON column).
+1. **Authenticate**: verify JWT token, extract student email. The ingestion service checks that the email matches a known Claude Enterprise seat allocation (via Firestore allowlist). Uploads from unrecognized emails are rejected. If a `research_token` is present, it is validated (JWT signature, `type === "research"`, valid `anon_id`) but invalid tokens do not reject the request.
+2. **Deduplicate**: read the offset ledger for this session from Firestore (`offsets/{participant_id}/{session_id}/{file_name}`). Compare the client's `offset` against the server's recorded offset. Three cases:
+   - **Offset matches**: normal append — accept all lines. Update ledger to `file_offset`.
+   - **Offset < server offset** (duplicate/re-upload after cursor reset): skip all lines. Update ledger to `file_offset`.
+   - **Offset > server offset** (gap — should not happen with append-only files): reject the upload (409) and return the server's current offset so the client can re-align.
+3. **Write to `course.logs`** (BigQuery, identified): insert rows via BigQuery's insert API. Each JSONL line becomes a row with columns: `participant_id`, `project_path`, `session_id`, `file_name`, `record_type`, `timestamp`, `version`, `data` (the original JSON line as a STRING column), `revoked` (boolean, default false).
 4. **Check Research-use consent**: read consent state from Firestore (`consent/{participant_id}`)
-5. **If Research-use**: look up anonymous ID from Firestore (`mapping/{participant_id}`), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `participant_id` and structural fields scrubbed.
-6. **Update offset ledger**: write the new offset to Firestore (`offsets/{participant_id}/{session_id}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent sessions).
+5. **If Research-use**: extract `anon_id` from the client's `research_token` (already validated in step 1), apply Phase 1 structural anonymization to the lines, and write to `research.logs` (BigQuery). The research table has the same schema but with `anon_id` replacing `participant_id` and structural fields scrubbed. No server-side identity lookup is needed — the `anon_id` comes from the client's signed token.
+6. **Update offset ledger**: write `file_offset` to Firestore (`offsets/{participant_id}/{session_id}/{file_name}`) in a transaction (the dedup read in step 2 and this write are part of the same Firestore transaction, preventing races from concurrent sessions).
 7. **Return** success with sync state for client re-alignment:
    ```json
    {
@@ -450,7 +472,7 @@ Selective omission remains possible (a student could decline to share a project,
 | BigQuery `course.logs` | `agent-logs-course` | Identified session logs | Course instructors (BigQuery Data Viewer) |
 | BigQuery `research.logs` | `agent-logs-research` | Anonymous session logs | Research team only (BigQuery Data Viewer) |
 | Firestore `consent/` | `agent-logs-admin` | Consent records, Research-use status | Ingestion service account only |
-| Firestore `mapping/` | `agent-logs-admin` | Student identity ↔ anonymous ID | Ingestion service account only |
+| Firestore `sealed_mapping/` | `agent-logs-admin` | Encrypted student identity ↔ anonymous ID (AES-256-GCM) | Ingestion service account only (decryptable only with `SEALED_MAPPING_KEY`) |
 | Firestore `offsets/` | `agent-logs-admin` | Per-session offset ledger for dedup | Ingestion service account only |
 
 Three separate GCP projects within the `@chibatech.dev` organization. IAM boundaries are structural, not just policy-based. In the POC (Milestone 1), all resources live in a single project; the three-project split happens in Milestone 3.
@@ -578,12 +600,12 @@ If the student toggles Research-use back on before course end, the revoked flag 
 |------|-----------|------|
 | **Course dataset** (`course.logs` in BigQuery) | Course duration + 1 academic year | Permanently deleted (table dropped) |
 | **Research dataset** (`research.logs` in BigQuery) | 5 years from end of research project | Permanently deleted (table dropped) |
-| **Mapping collection** (`mapping/` in Firestore) | Course duration + 1 month | Permanently deleted (entire collection dropped). Research data becomes irreversibly de-identified. |
+| **Sealed mapping** (`sealed_mapping/` in Firestore) + **`SEALED_MAPPING_KEY`** | Course duration + 1 month | Encryption key destroyed, sealed mapping collection dropped. Research data becomes irreversibly de-identified. |
 | **Consent collection** (`consent/` in Firestore) | 5 years from end of research project | Permanently deleted |
 | **`@chibatech.dev` accounts** | Course duration + 1 month | Deactivated. Matches withdrawal window. |
 | **External student portal access** | Course duration + 1 month | Email removed from allowlist. Matches withdrawal window. |
 
-After the mapping table is deleted, no person or system can connect research data to student identities.
+After the `SEALED_MAPPING_KEY` is destroyed and the sealed mapping collection is deleted, no person or system can connect research data to student identities — even with full access to Firestore.
 
 ---
 
@@ -655,7 +677,7 @@ After the withdrawal window closes, the only mechanism for removing research dat
 
 The consent form explains: what session logs are, how they are used under Educational-use (instruction) and Research-use (research), that Educational-use is part of the course and does not require separate consent, that Research-use is voluntary with no effect on grades, what the personal and meta-insights reports provide, how identity is protected, how and when to withdraw, what happens to data upon withdrawal, how long data is retained, and contact information for the PI and ethics committee. Available in Japanese and English. Plain language.
 
-At acknowledgement, the system generates an anonymous identifier. Both researcher and student retain a copy of the signed consent form. Authentication for all portal actions (withdrawal, insight reports, delete requests) uses the same Google account used for the student's Claude Enterprise seat — `@chibatech.dev` for CIT students, or the external student's preferred email. Accounts are retained for 1 month after the course ends to match the withdrawal window.
+The student's anonymous identifier is generated at CLI login time (not at consent acknowledgement) and stored in a signed research token on the student's machine. The email-to-anon_id mapping is stored encrypted in Firestore — the server never stores this link in plaintext. Both researcher and student retain a copy of the signed consent form. Authentication for all portal actions (withdrawal, insight reports, delete requests) uses email verification (magic code flow) — the same email used for the student's Claude Enterprise seat. Accounts are retained for 1 month after the course ends to match the withdrawal window.
 
 ### Implementation
 
@@ -668,36 +690,45 @@ The consent form is presented on the web portal. Students encounter it either:
 
 The flow:
 
-1. **Student authenticates** to the portal with their Google account (the same account used for their Claude Enterprise seat)
+1. **Student authenticates** to the portal with their email (magic code verification — same email as their Claude Enterprise seat)
 2. **Consent form displayed** in the student's preferred language (Japanese or English). The form covers all items required by the ethics application. It is a single scrollable document, not a multi-page wizard.
 3. **Student reads and acknowledges**. The acknowledgement is a single action: "I agree to Research-use participation." There is no partial consent — project-level sharing is managed separately through the `SessionStart` hook and `agent-logs withdraw`.
 4. **On acknowledgement**:
-   - The system generates a random anonymous identifier (UUID v4, not derived from any personal attribute)
+   - The student's anonymous identifier already exists (generated at CLI login, stored in their research token). No new identifier is generated at this step.
    - A PDF copy of the signed consent form (with timestamp and anonymous ID, but not student name) is generated for the student to download
-   - The server stores: anonymous ID, consent timestamp, language. It does **not** store the student's name or email in the consent record.
-5. **Mapping table updated**: the ingestion service's mapping collection in Firestore (`agent-logs-admin` project, `mapping/{participant_id}`) records the link between the student's email identity and their anonymous ID. This is the only place where the two are connected.
+   - The server stores: consent timestamp, research_use status. It does **not** store the student's name, email, or anonymous ID in the consent record — the only link between email and anon_id is the encrypted sealed mapping.
 
 #### Authentication
 
-All portal actions — consent, withdrawal, dashboard, delete requests — use the student's Google account (the same account used for their Claude Enterprise seat). CIT students use their `@chibatech.dev` accounts. External students use whatever email address was used to provision their Enterprise seat. No additional credentials are needed.
+All portal and CLI actions — consent, withdrawal, dashboard, delete requests, sync — use email-based magic code authentication. The server sends a 6-digit verification code to the student's email; the student enters it; the server returns a JWT (90-day expiry) and a research token. CIT students use their `@chibatech.dev` accounts. External students use whatever email address was used to provision their Enterprise seat.
 
-The ingestion service and web portal maintain an allowlist of authorized email addresses, synchronized with Claude Enterprise seat allocations. This ensures that the identity used for authentication, log upload, and portal access is always the same identity that Claude Code logs are generated under.
+The ingestion service and web portal maintain an allowlist of authorized email addresses (Firestore `allowlist/domains` and `allowlist/emails`), synchronized with Claude Enterprise seat allocations. Admin users can manage the allowlist via `agent-logs admin` commands.
 
-CIT `@chibatech.dev` accounts are retained for 1 month after the course ends, matching the withdrawal window. External student accounts are managed by the students themselves (they are not institutional accounts); the portal's allowlist retains their email for the same 1-month window. After the withdrawal window closes, the mapping table is deleted and withdrawal becomes impossible regardless of authentication — so account expiry after this point has no effect.
+CIT `@chibatech.dev` accounts are retained for 1 month after the course ends, matching the withdrawal window. External student accounts are managed by the students themselves (they are not institutional accounts); the portal's allowlist retains their email for the same 1-month window. After the withdrawal window closes, the sealed mapping encryption key is destroyed and withdrawal becomes impossible — so account expiry after this point has no effect.
 
 #### Consent record storage
 
-Consent records are stored in Firestore (`agent-logs-admin` project, `consent/` collection), linked to the anonymous ID only:
+Consent records are stored in Firestore (`agent-logs-admin` project, `consent/` collection), keyed by email:
 
 ```
-consent/{anon_id}:
-  consent_timestamp: datetime
-  language: "ja" | "en"
-  status: "opted_in" | "opted_out"
-  status_changed_at: datetime (nullable)
+consent/{email}:
+  research_use: boolean
+  consented_at: datetime (set on first opt-in)
+  changed_at: datetime
+  signed_at: datetime (nullable, set when consent form is signed)
 ```
 
-No student name, email, or student ID in this document. The only link to a real identity is the mapping collection (`mapping/{participant_id} → {anon_id}`), which is deleted after the withdrawal window.
+The consent document does **not** contain the student's anonymous ID. The only link between email and anon_id is the encrypted sealed mapping:
+
+```
+sealed_mapping/{sha256(email)}:
+  iv: hex string (12 bytes)
+  ciphertext: hex string (AES-256-GCM encrypted {email, anon_id})
+  tag: hex string (16 bytes, GCM auth tag)
+  updated_at: datetime
+```
+
+The sealed mapping is encrypted with a symmetric key (`SEALED_MAPPING_KEY` env var) held only by the ingestion service. Browsing Firestore reveals only opaque ciphertext — the email and anon_id are recoverable only by the service. The key is destroyed after the withdrawal window, making the mapping irrecoverable.
 
 Consent records are retained for five years from end of the research project, per CIT institutional policy.
 
@@ -814,12 +845,12 @@ Single web application serving both students and researchers.
 Demonstrate the end-to-end flow: a student runs Claude Code, logs are synced to GCP, and an instructor can query them. The POC runs in a safe environment with test data only — no real student PII. Fully serverless — no always-on instances.
 
 1. GCP project setup — single project with BigQuery dataset (`course`), Firestore collections (`offsets/`), Cloud Run service, minimal IAM
-2. `agent-logs` CLI — `login` (OAuth, refresh token stored in `~/.config/agent-logs/token.json` with `0600` permissions), `sync` (byte-offset upload to ingestion endpoint), `consent` / `withdraw` (projects.yaml management)
+2. `agent-logs` CLI — `login` (email magic code auth, JWT + research token stored in `~/.config/agent-logs/token.json` with `0600` permissions), `sync` (byte-offset upload to ingestion endpoint with research token), `consent` / `withdraw` (projects.json management)
 3. Claude Code hooks — `Stop` (sync per-turn sync), `SessionEnd` (final flush)
 4. `SessionStart` hook — static one-line status message ("Chiba Tech: session logs are being shared" / "not shared") so the tester always knows sync state. No interactive consent prompt (deferred to Milestone 2).
 5. Record-type and content-block filtering — exclude `file-history-snapshot`, `last-prompt`, `queue-operation`, `attribution-snapshot`, `content-replacement` by record type; strip `tool_result` content blocks within included records (retain stub with `tool_use_id` and `type`, drop `content`). Even in a safe environment, `file-history-snapshot` lines can be megabytes and `tool_result` blocks (especially `Read` results with base64 images) dominate payload size. Filtering is a simple type check + content-block walk on parsed JSON — low cost to include now, avoids retrofitting later.
-6. Ingestion service — Cloud Run endpoint that authenticates uploads and writes rows to BigQuery `course.logs` via the Storage Write API (committed mode for exactly-once semantics). Each JSONL line becomes a row: `participant_id`, `project_path`, `session_id`, `file_name`, `offset`, `record_type`, `timestamp`, `data`. No GCS objects to manage, no compaction needed.
-7. Idempotency — the offset ledger in Firestore (`offsets/{participant_id}/{session_id}`) tracks the last accepted offset per session. The dedup read and offset update run in a single Firestore transaction, preventing races from concurrent `Stop` hooks.
+6. Ingestion service — Cloud Run endpoint that authenticates uploads (JWT + optional research token validation) and writes rows to BigQuery `course.logs`. Each JSONL line becomes a row: `participant_id`, `project_path`, `session_id`, `file_name`, `record_type`, `timestamp`, `version`, `data`, `revoked`. No GCS objects to manage, no compaction needed.
+7. Idempotency — the offset ledger in Firestore (`offsets/{participant_id}/{session_id}/{file_name}`) tracks the last accepted `file_offset` per file. The dedup read and offset update run in a single Firestore transaction, preventing races from concurrent `Stop` hooks.
 8. Error surfacing — `agent-logs sync` writes the last sync result (timestamp, status, error message if any) to `~/.config/agent-logs/last-sync.json`. The `SessionStart` status message includes the last sync time. `agent-logs doctor` (basic version) checks: hooks registered, auth token valid, ingestion endpoint reachable, last sync status.
 9. Manual verification — instructor queries session logs directly in BigQuery (`SELECT * FROM course.logs WHERE session_id = '...' ORDER BY offset`). No scripts or file reconstruction needed.
 
@@ -831,8 +862,8 @@ Build out the student-facing and researcher-facing features described in this do
 2. `agent-logs doctor` (full version) — check hooks registered, auth valid, server reachable, last sync status, BigQuery connectivity
 3. Install script (macOS, Linux, Windows)
 4. Cursor validation — tail hash continuity checks, re-upload on file truncation/rewrite
-5. Firestore consent and mapping collections — `consent/{anon_id}` for Research-use status, `mapping/{participant_id}` for identity ↔ anonymous ID link, delete request tracking
-6. Research-use data pipeline — on ingestion, if student is Research-use: look up anonymous ID from `mapping/`, apply Phase 1 structural anonymization (`cwd`, project paths, `requestId`, `gitBranch`), write to BigQuery `research.logs`. Research dataset never contains unscrubbed structural fields.
+5. Firestore consent and sealed mapping collections — `consent/{email}` for Research-use status, `sealed_mapping/{sha256(email)}` for encrypted identity ↔ anonymous ID link, delete request tracking. The sealed mapping is already implemented; consent collection needs `consented_at` and `signed_at` fields (already implemented).
+6. Research-use data pipeline — on ingestion, if student is Research-use: extract `anon_id` from the client's signed research token (no server-side identity lookup needed), apply Phase 1 structural anonymization (`cwd`, project paths, `requestId`, `gitBranch`), write to BigQuery `research.logs`. Research dataset never contains unscrubbed structural fields.
 7. Backfill on late opt-in — when a student opts into Research-use mid-semester, anonymize and copy their existing `course.logs` rows to `research.logs` (from consent date onward)
 8. Web portal — student views (projects, sessions, consent, delete requests, sync status) and researcher views (delete queue, sync monitoring, consent overview)
 9. Research-use opt-in/opt-out flow via web portal — opt-out flags research rows as `revoked` (non-queryable via authorized views), re-opt-in clears the flag
@@ -845,8 +876,8 @@ Build out the student-facing and researcher-facing features described in this do
 Harden the system for production use with real student data.
 
 1. GCP project separation — split into three projects (`agent-logs-course`, `agent-logs-research`, `agent-logs-admin`) with structural IAM boundaries. BigQuery datasets and Firestore collections move to their respective projects.
-2. Phase 2 LLM scrubbing and adversarial re-identification verification (post-course, before mapping deletion)
-3. Data retention enforcement — automated deletion schedules (BigQuery table expiration, Firestore TTL policies) for course dataset, research dataset, mapping collection, accounts
+2. Phase 2 LLM scrubbing and adversarial re-identification verification (post-course, before sealed mapping key destruction)
+3. Data retention enforcement — automated deletion schedules (BigQuery table expiration, Firestore TTL policies) for course dataset, research dataset, sealed mapping collection + key destruction, accounts
 4. Small-cohort protections — suppression, composite descriptions, differential privacy for APS-I
 5. Consent form signing — PDF generation, researcher archive, late opt-in mechanics
 6. Delete request processing — review workflow, deletion from both BigQuery datasets (`DELETE FROM ... WHERE anon_id = ?`), audit trail. Available within withdrawal window only.
