@@ -57,7 +57,7 @@ export function removeShared(projects, path) {
   if (!projects.withdrawn.includes(path)) projects.withdrawn.push(path);
 }
 
-/** Sync research_use consent from server. Returns true if changed. */
+/** Sync consent state from server. Returns true if local state changed. */
 export async function syncConsent(projects, token, serverUrl) {
   try {
     const resp = await fetch(`${serverUrl}/portal/consent`, {
@@ -66,10 +66,17 @@ export async function syncConsent(projects, token, serverUrl) {
     });
     if (resp.ok) {
       const data = await resp.json();
+      let changed = false;
       if (projects.research_use !== (data.research_use || false)) {
         projects.research_use = data.research_use || false;
-        return true;
+        changed = true;
       }
+      const signedAt = data.signed_at || null;
+      if (projects.signed_at !== signedAt) {
+        projects.signed_at = signedAt;
+        changed = true;
+      }
+      return changed;
     }
   } catch {}
   return false;

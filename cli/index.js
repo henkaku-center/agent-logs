@@ -189,7 +189,8 @@ switch (command) {
     const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 
     // Not logged in or expired — initiate login
-    if (!readToken()?.token) {
+    const storedToken = readToken();
+    if (!storedToken?.token) {
       try {
         const result = await login();
           const p = readProjects();
@@ -202,39 +203,29 @@ switch (command) {
       }
     }
 
-    // Check consent form is signed
-    const storedToken = readToken();
-    try {
-      const resp = await fetch(`${INGESTION_URL}/portal/consent`, {
-        headers: { Authorization: `Bearer ${storedToken.token}` },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (resp.ok) {
-        const consent = await resp.json();
-        if (!consent.signed_at) {
-          const cols = process.stdout.columns || 89;
-          console.log([
-            cyan("─".repeat(cols)),
-            cyan(" Agent Logs — Consent Required"),
-            ``,
-            ` You must sign the informed consent form before using Claude.`,
-            ` Visit the portal to read and sign:`,
-            ``,
-            `   \x1b[4;36mhttps://agent-logs.chibatech.dev/portal.html\x1b[0m`,
-            ``,
-            ` ${dim(`Logged in as ${storedToken.email}`)}`,
-            cyan("─".repeat(cols)),
-          ].join("\n"));
-          process.exit(1);
-        }
-      }
-    } catch {}
-
-    // Read projects after potential login, sync consent from server
+    // Sync consent from server (also caches signed_at locally)
     const projects = readProjects();
-    const token = storedToken?.token;
+    const token = (storedToken || readToken())?.token;
     if (token && await syncConsent(projects, token, INGESTION_URL)) {
       writeProjects(projects);
+    }
+
+    // Block launch if consent form not signed
+    if (!projects.signed_at) {
+      const cols = process.stdout.columns || 89;
+      console.log([
+        cyan("─".repeat(cols)),
+        cyan(" Agent Logs — Consent Required"),
+        ``,
+        ` You must sign the informed consent form before using Claude.`,
+        ` Visit the portal to read and sign:`,
+        ``,
+        `   \x1b[4;36mhttps://agent-logs.chibatech.dev/portal.html\x1b[0m`,
+        ``,
+        ` ${dim(`Logged in as ${projects.participant_id || ""}`)}`,
+        cyan("─".repeat(cols)),
+      ].join("\n"));
+      process.exit(1);
     }
 
     // Already decided — skip

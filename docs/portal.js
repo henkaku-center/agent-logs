@@ -388,7 +388,10 @@ function renderSessions(container, hasMore) {
 
 // ── Consent ──
 
+let consentSigned = false;
+
 async function loadConsent() {
+  if (consentSigned) return;
   const eduToggle = document.getElementById("educational-toggle");
   const resToggle = document.getElementById("research-toggle");
   const signArea = document.getElementById("consent-sign-area");
@@ -396,6 +399,7 @@ async function loadConsent() {
   try {
     const data = await apiFetch("/portal/consent");
     const isSigned = !!data.signed_at;
+    if (isSigned) consentSigned = true;
 
     // Educational-use toggle — on by default for unsigned
     eduToggle.checked = true;
