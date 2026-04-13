@@ -304,50 +304,14 @@ function setupTabs() {
 
 async function loadDashboard() {
   const container = document.getElementById("dashboard-cards");
-  container.innerHTML = '<p class="loading">Loading...</p>';
-  try {
-    const [sessionsData, consentData, surveyData] = await Promise.all([
-      apiFetch("/portal/sessions"),
-      apiFetch("/portal/consent"),
-      apiFetch("/portal/survey"),
-    ]);
-
-    const totalSessions = sessionsData.projects.reduce(
-      (sum, p) => sum + p.sessions.length, 0
-    );
-    const preStudy = surveyData.surveys.pre_course;
-
-    container.innerHTML = `
-      <div class="status-card">
-        <div class="label">${t("Projects shared", "共有プロジェクト")}</div>
-        <div class="value">${sessionsData.projects.length}</div>
-      </div>
-      <div class="status-card">
-        <div class="label">${t("Sessions synced", "同期セッション")}</div>
-        <div class="value">${totalSessions}</div>
-      </div>
-      <div class="status-card">
-        <div class="label">${t("Research-use", "研究利用")}</div>
-        <div class="value ${consentData.research_use ? "ok" : "off"}">
-          ${consentData.research_use ? t("Opted in", "参加") : t("Not enrolled", "未参加")}
-        </div>
-      </div>
-      <div class="status-card">
-        <div class="label">${t("Pre-course survey", "事前アンケート")}</div>
-        <div class="value ${preStudy.status === "completed" ? "ok" : preStudy.status === "in_progress" ? "warn" : "off"}">
-          ${preStudy.status === "completed" ? t("Complete", "完了") : preStudy.status === "in_progress" ? t("In progress", "進行中") : t("Not started", "未開始")}
-        </div>
-      </div>
-      <div class="info-box" style="margin-top:1.5rem">
-        <p>${t(
-          "The first set of personal and cohort insights will be available after Golden Week, once approximately one month of usage data has been collected.",
-          "個人およびコホートのインサイトは、ゴールデンウィーク後、約1ヶ月分の利用データが収集された時点で提供開始予定です。"
-        )}</p>
-      </div>
-    `;
-  } catch (err) {
-    container.innerHTML = `<p class="form-error">${err.message}</p>`;
-  }
+  container.innerHTML = `
+    <div class="info-box">
+      <p>${t(
+        "The first set of personal and cohort insights will be available after Golden Week, once approximately one month of usage data has been collected.",
+        "個人およびコホートのインサイトは、ゴールデンウィーク後、約1ヶ月分の利用データが収集された時点で提供開始予定です。"
+      )}</p>
+    </div>
+  `;
 }
 
 // ── Sessions ──
