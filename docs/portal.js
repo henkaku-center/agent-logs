@@ -81,9 +81,8 @@ function showSignModal(title, onConfirm) {
 }
 
 function exportPDF(title, contentHtml) {
-  const win = window.open("", "_blank");
   const auth = getToken();
-  win.document.write(`<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html><head><title>${title}</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; max-width: 700px; margin: 40px auto; font-size: 14px; line-height: 1.6; color: #333; }
@@ -100,9 +99,22 @@ function exportPDF(title, contentHtml) {
   <h1>${title}</h1>
   <div class="meta">Participant: ${auth?.email || ""} · Exported: ${new Date().toLocaleString()}</div>
   ${contentHtml}
-</body></html>`);
-  win.document.close();
-  win.print();
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  } else {
+    // Safari blocks window.open in some contexts — fall back to blob download
+    const blob = new Blob([html], { type: "text/html" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${title.replace(/[^a-zA-Z0-9_-]/g, "_")}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 }
 
 // ── Auth ──
@@ -326,6 +338,12 @@ async function loadDashboard() {
           ${preStudy.status === "completed" ? t("Complete", "完了") : preStudy.status === "in_progress" ? t("In progress", "進行中") : t("Not started", "未開始")}
         </div>
       </div>
+      <div class="info-box" style="margin-top:1.5rem">
+        <p>${t(
+          "The first set of personal and cohort insights will be available after Golden Week, once approximately one month of usage data has been collected.",
+          "個人およびコホートのインサイトは、ゴールデンウィーク後、約1ヶ月分の利用データが収集された時点で提供開始予定です。"
+        )}</p>
+      </div>
     `;
   } catch (err) {
     container.innerHTML = `<p class="form-error">${err.message}</p>`;
@@ -477,9 +495,18 @@ async function loadConsent() {
           if (!resp.ok) throw new Error("Failed to fetch consent PDF");
           const html = await resp.text();
           const win = window.open("", "_blank");
-          win.document.write(html);
-          win.document.close();
-          win.print();
+          if (win) {
+            win.document.write(html);
+            win.document.close();
+            win.print();
+          } else {
+            const blob = new Blob([html], { type: "text/html" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "consent-form.html";
+            a.click();
+            URL.revokeObjectURL(a.href);
+          }
         } catch (err) {
           alert(err.message);
         }

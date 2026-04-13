@@ -33,6 +33,27 @@ const GMAIL_SENDER = process.env.GMAIL_SENDER || "claude@chibatech.dev";
 const OTLP_SECRET = process.env.OTLP_SECRET || "change-me-otlp-secret";
 const SEALED_MAPPING_KEY = process.env.SEALED_MAPPING_KEY || null;
 
+/* ── BigQuery DML insert (avoids streaming buffer so rows are immediately mutable) ── */
+
+async function insertRows(table, rows) {
+  if (rows.length === 0) return;
+  const columns = Object.keys(rows[0]);
+  const valueClauses = [];
+  const params = {};
+  for (let i = 0; i < rows.length; i++) {
+    const refs = columns.map((col) => {
+      const key = `r${i}_${col}`;
+      params[key] = rows[i][col] ?? null;
+      return `@${key}`;
+    });
+    valueClauses.push(`(${refs.join(", ")})`);
+  }
+  await bigquery.query({
+    query: `INSERT INTO \`${PROJECT_ID}.${DATASET}.${table}\` (${columns.join(", ")}) VALUES ${valueClauses.join(", ")}`,
+    params,
+  });
+}
+
 /* ── Sealed mapping helpers ── */
 
 function hashEmail(email) {
@@ -434,7 +455,7 @@ app.post("/ingest", async (req, res) => {
         };
       });
 
-      await bigquery.dataset(DATASET).table(TABLE).insert(rows);
+      await insertRows(TABLE, rows);
 
       const titleRef = firestore.doc(`session_titles/${participantId}/${session_id}/meta`);
       const titleDoc = await titleRef.get();
@@ -479,7 +500,7 @@ app.post("/ingest", async (req, res) => {
                 revoked: false,
               };
             });
-            await bigquery.dataset(DATASET).table(RESEARCH_TABLE).insert(researchRows);
+            await insertRows(RESEARCH_TABLE, researchRows);
           }
         } catch (err) {
           console.error("Research logs write failed:", err.message);
@@ -891,7 +912,7 @@ app.post("/portal/consent", async (req, res) => {
               data: anonymizeRecord(r.data),
               revoked: false,
             }));
-            await bigquery.dataset(DATASET).table(RESEARCH_TABLE).insert(newRows);
+            await insertRows(RESEARCH_TABLE, newRows);
             backfill_count = newRows.length;
           }
         }
@@ -1229,7 +1250,7 @@ app.post("/v1/logs", async (req, res) => {
     }
 
     if (rows.length > 0) {
-      await bigquery.dataset(DATASET).table(COWORK_TABLE).insert(rows);
+      await insertRows(COWORK_TABLE, rows);
     }
 
     res.json({ partialSuccess: {} });

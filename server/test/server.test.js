@@ -98,6 +98,30 @@ const mockBigQuery = {
   }),
   query: async ({ query, params }) => {
     bigqueryQueries.push({ query, params });
+    // Route DML INSERTs to the in-memory row stores so test assertions work
+    if (query.startsWith("INSERT INTO")) {
+      const isResearch = query.includes("research_logs");
+      const isCowork = query.includes("cowork_events");
+      // Extract column names from INSERT INTO `...` (col1, col2, ...) VALUES
+      const colMatch = query.match(/\(([^)]+)\)\s+VALUES/);
+      if (colMatch) {
+        const columns = colMatch[1].split(",").map((c) => c.trim());
+        // Extract row values from named params @r0_col, @r1_col, ...
+        const rowCount = Object.keys(params).filter((k) => k.startsWith("r0_")).length > 0
+          ? Math.max(...Object.keys(params).map((k) => parseInt(k.match(/^r(\d+)_/)?.[1] ?? "-1"))) + 1
+          : 0;
+        for (let i = 0; i < rowCount; i++) {
+          const row = {};
+          for (const col of columns) {
+            const key = `r${i}_${col}`;
+            row[col] = params[key] ?? null;
+          }
+          if (isResearch) researchRows.push(row);
+          else if (isCowork) bigqueryRows.push(row);
+          else bigqueryRows.push(row);
+        }
+      }
+    }
     return [bigqueryQueryResults];
   },
 };
@@ -1196,11 +1220,14 @@ describe("consent edge cases", () => {
       data: JSON.stringify({ type: "user", cwd: "/home/student/proj", message: { content: "hello" } }),
     };
     const origQuery = mockBigQuery.query;
-    mockBigQuery.query = async ({ query, params }) => {
-      bigqueryQueries.push({ query, params });
+    mockBigQuery.query = async (opts) => {
       // Backfill LEFT JOIN query returns rows not yet in research.logs
-      if (query.includes("LEFT JOIN")) return [[courseRow]];
-      return [[]];
+      if (opts.query.includes("LEFT JOIN")) {
+        bigqueryQueries.push(opts);
+        return [[courseRow]];
+      }
+      // Delegate all other queries (including INSERTs) to the real mock
+      return origQuery(opts);
     };
 
     researchRows.length = 0;
