@@ -21,6 +21,11 @@ async function promptConsent() {
   const fs = await import("fs");
   const tty = await import("tty");
 
+  // Skip interactive prompt if not a real terminal (IDE terminals, pipes, etc.)
+  if (!process.stdin.isTTY && !process.stdout.isTTY) {
+    return false;
+  }
+
   let fd;
   try {
     fd = fs.openSync("/dev/tty", "r+");
@@ -199,7 +204,7 @@ switch (command) {
         registerHooks();
       } catch (err) {
         console.error(` Login failed: ${err.message}`);
-        process.exit(1);
+        process.exit(3);
       }
     }
 
@@ -225,7 +230,7 @@ switch (command) {
         ` ${dim(`Logged in as ${projects.participant_id || ""}`)}`,
         cyan("─".repeat(cols)),
       ].join("\n"));
-      process.exit(1);
+      process.exit(3);
     }
 
     // Already decided — skip
@@ -263,7 +268,7 @@ switch (command) {
       writeProjects(projects);
     }
     // choice === null (Esc) — do nothing, ask again next time, don't launch claude
-    if (choice === null) process.exit(1);
+    if (choice === null) process.exit(3);
     break;
   }
 

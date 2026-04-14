@@ -111,7 +111,7 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
 fi
 
 # ── Install claude wrapper as shell function ──
-WRAPPER_LINE='claude() { command -v agent-logs &>/dev/null && { agent-logs consent-dialog || return 0; }; command claude "$@"; }'
+WRAPPER_LINE='claude() { if command -v agent-logs &>/dev/null; then agent-logs consent-dialog; [ $? -eq 3 ] && return 0; fi; command claude "$@"; }'
 MARKER="# agent-logs wrapper"
 
 case "$(basename "${SHELL:-bash}")" in
