@@ -71,13 +71,25 @@ jobs:
       - name: Inject SEA blob
         working-directory: cli
         run: |
+          MACHO_FLAG=""
+          if [ "${{ matrix.node_platform }}" = "darwin" ]; then
+            MACHO_FLAG="--macho-segment-name NODE_SEA"
+          fi
           npx postject agent-logs NODE_SEA_BLOB dist/sea-prep.blob \
-            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 \
+            $MACHO_FLAG
 
       - name: Re-sign macOS binary
         if: matrix.node_platform == 'darwin'
         working-directory: cli
         run: codesign --sign - agent-logs
+
+      - name: Smoke test SEA binary
+        if: matrix.target == 'linux-x64' || matrix.target == 'darwin-arm64'
+        working-directory: cli
+        run: |
+          ./agent-logs 2>&1 | head -1 | grep -q "Usage:" || { echo "Smoke test failed"; exit 1; }
+          echo "Smoke test passed"
 
       - name: Rename binary
         working-directory: cli
