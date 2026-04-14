@@ -8,7 +8,12 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "node build.mjs",
+    "build:bundle": "node build.mjs --bundle-only"
   },
-  "dependencies": {}
+  "dependencies": {},
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
 }

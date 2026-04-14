@@ -1,54 +1,104 @@
 #!/usr/bin/env bash
-# agent-logs installer for macOS / Linux
+# agent-logs installer for macOS / Linux / WSL
 # Usage: curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash
 set -euo pipefail
 
 REPO="henkaku-center/agent-logs"
 INSTALL_DIR="${HOME}/.local/bin"
-CONFIG_DIR="${HOME}/.config/agent-logs"
+BINARY="${INSTALL_DIR}/agent-logs"
 
 info()  { printf '\033[1;34m→\033[0m %s\n' "$1"; }
 ok()    { printf '\033[1;32m✓\033[0m %b\n' "$1"; }
 err()   { printf '\033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
-# ── Check prerequisites ──
-command -v node >/dev/null 2>&1 || err "Node.js is required. Install it from https://nodejs.org"
-NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-[ "$NODE_VERSION" -ge 18 ] || err "Node.js 18+ required (found v${NODE_VERSION})"
+# ── Detect platform ──
+OS=$(uname -s)
+ARCH=$(uname -m)
 
-command -v git >/dev/null 2>&1 || err "Git is required."
+case "$OS" in
+  Linux)   PLATFORM="linux" ;;
+  Darwin)  PLATFORM="darwin" ;;
+  *)       err "Unsupported OS: $OS" ;;
+esac
 
-# ── Create directories ──
+case "$ARCH" in
+  x86_64|amd64)   ARCH="x64" ;;
+  arm64|aarch64)   ARCH="arm64" ;;
+  *)               err "Unsupported architecture: $ARCH" ;;
+esac
+
+# macOS: detect Rosetta and prefer native arm64
+if [ "$PLATFORM" = "darwin" ] && [ "$ARCH" = "x64" ]; then
+  if sysctl -n sysctl.proc_translated 2>/dev/null | grep -q 1; then
+    ARCH="arm64"
+    info "Rosetta detected — using native arm64 binary"
+  fi
+fi
+
+TARGET="${PLATFORM}-${ARCH}"
+info "Detected platform: ${TARGET}"
+
+# ── Resolve latest release ──
+info "Fetching latest release..."
+RELEASE_URL="https://api.github.com/repos/${REPO}/releases/latest"
+
+if command -v curl >/dev/null 2>&1; then
+  RELEASE_JSON=$(curl -fsSL "$RELEASE_URL") || err "Failed to fetch release info"
+elif command -v wget >/dev/null 2>&1; then
+  RELEASE_JSON=$(wget -qO- "$RELEASE_URL") || err "Failed to fetch release info"
+else
+  err "curl or wget is required"
+fi
+
+# Extract download URL and tag (works with or without jq)
+if command -v jq >/dev/null 2>&1; then
+  TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+  DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name == \"agent-logs-${TARGET}\") | .browser_download_url")
+  CHECKSUMS_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name == "checksums.txt") | .browser_download_url')
+else
+  TAG=$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*: *"//;s/".*//')
+  DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url.*agent-logs-${TARGET}\"" | head -1 | sed 's/.*"browser_download_url": *"//;s/".*//')
+  CHECKSUMS_URL=$(echo "$RELEASE_JSON" | grep 'browser_download_url.*checksums.txt"' | head -1 | sed 's/.*"browser_download_url": *"//;s/".*//')
+fi
+
+[ -n "$DOWNLOAD_URL" ] || err "No binary found for ${TARGET} in release ${TAG}. Check https://github.com/${REPO}/releases"
+info "Downloading agent-logs ${TAG} for ${TARGET}..."
+
+# ── Download binary ──
 mkdir -p "$INSTALL_DIR"
-mkdir -p "$CONFIG_DIR"
-
-# ── Download CLI ──
-info "Downloading agent-logs CLI..."
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
-if ! git clone --depth 1 "https://github.com/${REPO}.git" "$WORK/agent-logs" 2>/dev/null; then
-  err "Failed to clone repository. Check your internet connection and GitHub access."
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "$DOWNLOAD_URL" -o "${WORK}/agent-logs"
+  [ -n "$CHECKSUMS_URL" ] && curl -fsSL "$CHECKSUMS_URL" -o "${WORK}/checksums.txt"
+else
+  wget -qO "${WORK}/agent-logs" "$DOWNLOAD_URL"
+  [ -n "$CHECKSUMS_URL" ] && wget -qO "${WORK}/checksums.txt" "$CHECKSUMS_URL"
 fi
 
-# Install dependencies
-cd "$WORK/agent-logs/cli"
-info "Installing dependencies..."
-npm install --production --silent 2>/dev/null || err "npm install failed"
+# ── Verify checksum ──
+if [ -f "${WORK}/checksums.txt" ]; then
+  EXPECTED=$(grep "agent-logs-${TARGET}" "${WORK}/checksums.txt" | awk '{print $1}')
+  if [ -n "$EXPECTED" ]; then
+    if command -v sha256sum >/dev/null 2>&1; then
+      ACTUAL=$(sha256sum "${WORK}/agent-logs" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+      ACTUAL=$(shasum -a 256 "${WORK}/agent-logs" | awk '{print $1}')
+    else
+      ACTUAL=""
+    fi
+    if [ -n "$ACTUAL" ]; then
+      [ "$ACTUAL" = "$EXPECTED" ] || err "Checksum mismatch! Expected ${EXPECTED}, got ${ACTUAL}"
+      ok "Checksum verified"
+    fi
+  fi
+fi
 
-# Copy CLI to install directory
-CLI_DIR="${CONFIG_DIR}/cli"
-rm -rf "$CLI_DIR"
-cp -r "$WORK/agent-logs/cli" "$CLI_DIR"
-
-# Create launcher script with the correct path baked in
-cat > "${INSTALL_DIR}/agent-logs" <<EOF
-#!/usr/bin/env node
-import("${CLI_DIR}/index.js");
-EOF
-chmod +x "${INSTALL_DIR}/agent-logs"
-
-ok "CLI installed to ${INSTALL_DIR}/agent-logs"
+# ── Install ──
+mv "${WORK}/agent-logs" "$BINARY"
+chmod +x "$BINARY"
+ok "Installed to ${BINARY}"
 
 # ── Check PATH ──
 if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
@@ -61,18 +111,22 @@ if ! echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
 fi
 
 # ── Install claude wrapper as shell function ──
-# Shell functions take precedence over binaries, so this survives Claude auto-updates
 WRAPPER_LINE='claude() { command -v agent-logs &>/dev/null && { agent-logs consent-dialog || return 0; }; command claude "$@"; }'
 MARKER="# agent-logs wrapper"
 
-case "$(basename "$SHELL")" in
+case "$(basename "${SHELL:-bash}")" in
   zsh)  RC="$HOME/.zshrc" ;;
   *)    RC="$HOME/.bashrc" ;;
 esac
 
-sed -i "/$MARKER/d" "$RC" 2>/dev/null || true
+# Remove old wrapper line if present, then add current one
+if [ -f "$RC" ]; then
+  sed -i.bak "/$MARKER/d" "$RC" 2>/dev/null || true
+  rm -f "${RC}.bak"
+fi
 printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
-ok "Wrapper installed at ${RC}"
-printf '\033[1;32m✓\033[0m Installation complete. Run:\n\n'
+ok "Wrapper installed in ${RC}"
+
+printf '\n\033[1;32m✓\033[0m Installation complete. Run:\n\n'
 printf '  \033[1msource %s\033[0m\n' "$RC"
 printf '  \033[38;2;227;137;62mclaude\033[0m\n\n'

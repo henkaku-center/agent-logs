@@ -86,8 +86,9 @@ export async function login() {
   });
 
   if (!sendResp.ok) {
+    const domain = email.split("@")[1];
     throw new Error(
-      `Claude account not recognized.\n Contact \x1b[4;36mclaude@chibatech.dev\x1b[0m to add your email to the allowlist.\n Otherwise use \x1b[1magent-logs uninstall\x1b[0m to remove this tool.`
+      `\x1b[1m${email}\x1b[0m is not on the allowlist (domain \x1b[1m@${domain}\x1b[0m is not recognised).\n Contact \x1b[4;36mclaude@chibatech.dev\x1b[0m to add your email or domain.\n Otherwise use \x1b[1magent-logs uninstall\x1b[0m to remove this tool.`
     );
   }
   log(` Verification code sent to ${email}`);

@@ -1,0 +1,113 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            node_arch: x64
+            node_platform: linux
+          - os: ubuntu-latest
+            target: linux-arm64
+            node_arch: arm64
+            node_platform: linux
+          - os: macos-latest
+            target: darwin-arm64
+            node_arch: arm64
+            node_platform: darwin
+          - os: macos-13
+            target: darwin-x64
+            node_arch: x64
+            node_platform: darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dev dependencies
+        working-directory: cli
+        run: npm install
+
+      - name: Bundle and generate SEA blob
+        working-directory: cli
+        run: npm run build
+
+      - name: Download Node binary for target
+        working-directory: cli
+        run: |
+          NODE_VERSION=$(node -v)
+          ARCHIVE="node-${NODE_VERSION}-${{ matrix.node_platform }}-${{ matrix.node_arch }}"
+
+          if [ "${{ matrix.node_platform }}" = "linux" ]; then
+            curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/${ARCHIVE}.tar.xz" -o node.tar.xz
+            tar -xJf node.tar.xz
+            cp "${ARCHIVE}/bin/node" agent-logs
+          else
+            curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/${ARCHIVE}.tar.gz" -o node.tar.gz
+            tar -xzf node.tar.gz
+            cp "${ARCHIVE}/bin/node" agent-logs
+          fi
+
+      - name: Remove macOS signature before injection
+        if: matrix.node_platform == 'darwin'
+        working-directory: cli
+        run: codesign --remove-signature agent-logs
+
+      - name: Inject SEA blob
+        working-directory: cli
+        run: |
+          npx postject agent-logs NODE_SEA_BLOB dist/sea-prep.blob \
+            --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
+
+      - name: Re-sign macOS binary
+        if: matrix.node_platform == 'darwin'
+        working-directory: cli
+        run: codesign --sign - agent-logs
+
+      - name: Rename binary
+        working-directory: cli
+        run: mv agent-logs agent-logs-${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-logs-${{ matrix.target }}
+          path: cli/agent-logs-${{ matrix.target }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum agent-logs-* > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/agent-logs-*
+            artifacts/checksums.txt
+          generate_release_notes: true
