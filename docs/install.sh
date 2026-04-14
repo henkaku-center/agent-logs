@@ -127,6 +127,6 @@ fi
 printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
 ok "Wrapper installed in ${RC}"
 
-printf '\n\033[1;32m✓\033[0m Installation complete. Run:\n\n'
-printf '  \033[1msource %s\033[0m\n' "$RC"
+printf '\n\033[1;32m✓\033[0m Installation complete. Open a new terminal, then run:\n\n'
 printf '  \033[38;2;227;137;62mclaude\033[0m\n\n'
+printf '  Or reload your current shell: \033[1msource %s\033[0m\n\n' "$RC"
