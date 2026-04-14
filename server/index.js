@@ -435,20 +435,20 @@ app.post("/ingest", async (req, res) => {
 
     // Phase 2: Write data to BigQuery BEFORE advancing the offset
     if (linesToInsert.length > 0) {
-      const rows = linesToInsert.map((line) => {
-        let parsed;
-        try { parsed = JSON.parse(line); } catch { parsed = {}; }
-        return {
-          participant_id: participantId,
-          project_path,
-          session_id,
-          file_name,
-          record_type: parsed.type || "unknown",
-          timestamp: parsed.timestamp ? new Date(parsed.timestamp).toISOString() : new Date().toISOString(),
-          version: parsed.version || null,
-          data: line,
-        };
+      const parsed = linesToInsert.map((line) => {
+        try { return JSON.parse(line); } catch { return {}; }
       });
+
+      const rows = linesToInsert.map((line, i) => ({
+        participant_id: participantId,
+        project_path,
+        session_id,
+        file_name,
+        record_type: parsed[i].type || "unknown",
+        timestamp: parsed[i].timestamp ? new Date(parsed[i].timestamp).toISOString() : new Date().toISOString(),
+        version: parsed[i].version || null,
+        data: line,
+      }));
 
       await insertRows(TABLE, rows);
 
@@ -456,8 +456,8 @@ app.post("/ingest", async (req, res) => {
       await firestore.runTransaction(async (tx) => {
         const freshDoc = await tx.get(ledgerRef);
         const freshOffset = freshDoc.exists ? freshDoc.data().offset : 0;
-        // Guard against concurrent writes: only advance if still at expected position
-        if (freshOffset <= offset) {
+        // Only advance if no concurrent request already moved past us
+        if (freshOffset === offset) {
           tx.set(ledgerRef, { offset: serverOffset, updated_at: new Date() });
         }
       });
@@ -465,11 +465,9 @@ app.post("/ingest", async (req, res) => {
       const titleRef = firestore.doc(`session_titles/${participantId}/${session_id}/meta`);
       const titleDoc = await titleRef.get();
       if (!titleDoc.exists) {
-        for (const line of linesToInsert) {
-          let parsed;
-          try { parsed = JSON.parse(line); } catch { continue; }
-          if (parsed.type !== "user") continue;
-          const content = parsed.message?.content;
+        for (const p of parsed) {
+          if (p.type !== "user") continue;
+          const content = p.message?.content;
           let text = typeof content === "string" ? content
             : Array.isArray(content) ? (content.find((c) => c.type === "text")?.text || "") : "";
           if (text.startsWith("<system>") || text.startsWith("# ")) continue;
@@ -897,6 +895,7 @@ app.post("/portal/consent", async (req, res) => {
                     FROM \`${PROJECT_ID}.${DATASET}.${TABLE}\` c
                     LEFT JOIN \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` r
                       ON r.anon_id = @anon_id AND r.session_id = c.session_id
+                         AND r.file_name = c.file_name AND r.timestamp = c.timestamp
                     WHERE c.participant_id = @email AND c.timestamp >= @since AND r.session_id IS NULL
                     ORDER BY c.timestamp ASC`,
             params: { email, since: sinceDate.toISOString(), anon_id: anonId },

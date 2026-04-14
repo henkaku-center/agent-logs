@@ -37,7 +37,7 @@ export function stripToolResults(record) {
   }
   if (record.toolUseResult) {
     const meta = {};
-    const keep = ["status", "durationMs", "bytes", "code", "codeText", "interrupted", "is_error", "stdout_length", "stderr_length"];
+    const keep = ["status", "durationMs", "bytes", "code", "codeText", "interrupted", "is_error"];
     for (const key of keep) {
       if (record.toolUseResult[key] !== undefined) meta[key] = record.toolUseResult[key];
     }
