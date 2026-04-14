@@ -417,28 +417,23 @@ app.post("/ingest", async (req, res) => {
     let linesSkipped = 0;
     const serverOffset = file_offset;
 
-    await firestore.runTransaction(async (tx) => {
-      const ledgerDoc = await tx.get(ledgerRef);
-      const currentOffset = ledgerDoc.exists ? ledgerDoc.data().offset : 0;
+    // Phase 1: Check offset ledger (read-only, no commit yet)
+    const ledgerDoc = await ledgerRef.get();
+    const currentOffset = ledgerDoc.exists ? ledgerDoc.data().offset : 0;
 
-      if (offset > currentOffset) {
-        throw Object.assign(
-          new Error(`Offset gap: client=${offset}, server=${currentOffset}`),
-          { code: "OFFSET_GAP", serverOffset: currentOffset }
-        );
-      }
+    if (offset > currentOffset) {
+      return res.status(409).json({ error: "Offset gap", server_offset: currentOffset });
+    }
 
-      if (offset < currentOffset) {
-        linesToInsert = [];
-        linesSkipped = lines.length;
-      } else {
-        linesToInsert = lines;
-        linesSkipped = 0;
-      }
+    if (offset < currentOffset) {
+      linesToInsert = [];
+      linesSkipped = lines.length;
+    } else {
+      linesToInsert = lines;
+      linesSkipped = 0;
+    }
 
-      tx.set(ledgerRef, { offset: serverOffset, updated_at: new Date() });
-    });
-
+    // Phase 2: Write data to BigQuery BEFORE advancing the offset
     if (linesToInsert.length > 0) {
       const rows = linesToInsert.map((line) => {
         let parsed;
@@ -456,6 +451,16 @@ app.post("/ingest", async (req, res) => {
       });
 
       await insertRows(TABLE, rows);
+
+      // Phase 3: Advance offset only after BigQuery write succeeds
+      await firestore.runTransaction(async (tx) => {
+        const freshDoc = await tx.get(ledgerRef);
+        const freshOffset = freshDoc.exists ? freshDoc.data().offset : 0;
+        // Guard against concurrent writes: only advance if still at expected position
+        if (freshOffset <= offset) {
+          tx.set(ledgerRef, { offset: serverOffset, updated_at: new Date() });
+        }
+      });
 
       const titleRef = firestore.doc(`session_titles/${participantId}/${session_id}/meta`);
       const titleDoc = await titleRef.get();
@@ -515,9 +520,6 @@ app.post("/ingest", async (req, res) => {
       lines_skipped: linesSkipped,
     });
   } catch (err) {
-    if (err.code === "OFFSET_GAP") {
-      return res.status(409).json({ error: "Offset gap", server_offset: err.serverOffset });
-    }
     console.error("Ingest error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
