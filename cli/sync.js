@@ -17,22 +17,38 @@ export const ALLOWED_TYPES = new Set([
   "summary",
   "custom-title",
   "ai-title",
+  "queue-operation",
+  "permission-mode",
 ]);
 
 /**
  * Strip tool_result content blocks from a parsed record.
  * Retains stub with tool_use_id and type, drops content field.
+ * Preserves toolUseResult metadata (status, duration, size) but drops content.
  */
 export function stripToolResults(record) {
-  if (!record.message?.content || !Array.isArray(record.message.content)) {
-    return record;
+  if (record.message?.content && Array.isArray(record.message.content)) {
+    record.message.content = record.message.content.map((block) => {
+      if (block.type === "tool_result") {
+        return { type: "tool_result", tool_use_id: block.tool_use_id };
+      }
+      return block;
+    });
   }
-  record.message.content = record.message.content.map((block) => {
-    if (block.type === "tool_result") {
-      return { type: "tool_result", tool_use_id: block.tool_use_id };
+  if (record.toolUseResult) {
+    const meta = {};
+    const keep = ["status", "durationMs", "bytes", "code", "codeText", "interrupted", "is_error", "stdout_length", "stderr_length"];
+    for (const key of keep) {
+      if (record.toolUseResult[key] !== undefined) meta[key] = record.toolUseResult[key];
     }
-    return block;
-  });
+    // Preserve size signals from content fields without exposing content
+    if (typeof record.toolUseResult.stdout === "string") meta.stdout_length = record.toolUseResult.stdout.length;
+    if (typeof record.toolUseResult.stderr === "string") meta.stderr_length = record.toolUseResult.stderr.length;
+    if (typeof record.toolUseResult.result === "string") meta.result_length = record.toolUseResult.result.length;
+    if (typeof record.toolUseResult.prompt === "string") meta.prompt_length = record.toolUseResult.prompt.length;
+    if (typeof record.toolUseResult.content === "string") meta.content_length = record.toolUseResult.content.length;
+    record.toolUseResult = Object.keys(meta).length > 0 ? meta : undefined;
+  }
   return record;
 }
 

@@ -17,19 +17,18 @@ import {
 // ── ALLOWED_TYPES ──
 
 describe("ALLOWED_TYPES", () => {
-  it("includes the 7 synced record types", () => {
-    const expected = ["user", "assistant", "system", "progress", "summary", "custom-title", "ai-title"];
+  it("includes the 9 synced record types", () => {
+    const expected = ["user", "assistant", "system", "progress", "summary", "custom-title", "ai-title", "queue-operation", "permission-mode"];
     for (const t of expected) {
       assert.ok(ALLOWED_TYPES.has(t), `missing: ${t}`);
     }
-    assert.equal(ALLOWED_TYPES.size, 7);
+    assert.equal(ALLOWED_TYPES.size, 9);
   });
 
   it("excludes privacy-sensitive record types", () => {
     const excluded = [
       "file-history-snapshot",
       "last-prompt",
-      "queue-operation",
       "attribution-snapshot",
       "content-replacement",
     ];
@@ -293,16 +292,32 @@ describe("line filtering", () => {
     const excluded = [
       { type: "file-history-snapshot", messageId: "abc", snapshot: {"/tmp/x": "huge"}, isSnapshotUpdate: false },
       { type: "last-prompt", lastPrompt: "cached prompt", sessionId: "sess1" },
-      { type: "queue-operation", operation: "dequeue", timestamp: "2026-01-01T00:00:00Z", sessionId: "sess1" },
       { type: "attribution-snapshot" },
       { type: "content-replacement" },
-      { type: "permission-mode", permissionMode: "acceptEdits", sessionId: "sess1" },
       { type: "attachment", attachment: { type: "mcp_instructions_delta" }, parentUuid: "xxx" },
       { type: "pr-link", sessionId: "sess1", prNumber: 42, prUrl: "https://github.com/org/repo/pull/42", prRepository: "org/repo" },
     ];
     const lines = excluded.map((r) => JSON.stringify(r));
     const result = filterLines(lines);
     assert.equal(result.length, 0);
+  });
+
+  it("includes queue-operation records", () => {
+    const lines = [
+      JSON.stringify({ type: "queue-operation", operation: "enqueue", timestamp: "2026-04-01T00:00:00Z", sessionId: "sess1", content: "follow-up message" }),
+    ];
+    const result = filterLines(lines);
+    assert.equal(result.length, 1);
+    assert.ok(result[0].includes("follow-up message"));
+  });
+
+  it("includes permission-mode records", () => {
+    const lines = [
+      JSON.stringify({ type: "permission-mode", permissionMode: "acceptEdits", sessionId: "sess1" }),
+    ];
+    const result = filterLines(lines);
+    assert.equal(result.length, 1);
+    assert.ok(result[0].includes("acceptEdits"));
   });
 
   it("skips invalid JSON lines", () => {
@@ -496,6 +511,91 @@ describe("stripToolResults with real-world content shapes", () => {
     const result = stripToolResults(record);
     assert.equal(result, record); // same reference
     assert.equal(record.message.content[0].content, undefined);
+  });
+});
+
+// ── toolUseResult metadata preservation ──
+
+describe("stripToolResults preserves toolUseResult metadata", () => {
+  it("preserves Bash tool metadata, replaces stdout/stderr with lengths", () => {
+    const record = {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tu_1", content: "output" }] },
+      toolUseResult: {
+        stdout: "line1\nline2\nline3",
+        stderr: "warning: something",
+        interrupted: false,
+        is_error: false,
+      },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result.toolUseResult.stdout, undefined);
+    assert.equal(result.toolUseResult.stderr, undefined);
+    assert.equal(result.toolUseResult.stdout_length, 17);
+    assert.equal(result.toolUseResult.stderr_length, 18);
+    assert.equal(result.toolUseResult.interrupted, false);
+    assert.equal(result.toolUseResult.is_error, false);
+  });
+
+  it("preserves WebFetch tool metadata, replaces result with length", () => {
+    const record = {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tu_2", content: "" }] },
+      toolUseResult: {
+        bytes: 4531,
+        code: 200,
+        codeText: "OK",
+        result: "# Long markdown content...\n".repeat(100),
+      },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result.toolUseResult.bytes, 4531);
+    assert.equal(result.toolUseResult.code, 200);
+    assert.equal(result.toolUseResult.codeText, "OK");
+    assert.equal(result.toolUseResult.result, undefined);
+    assert.equal(result.toolUseResult.result_length, 2700);
+  });
+
+  it("preserves Agent subagent metadata, replaces prompt/content with lengths", () => {
+    const record = {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tu_3", content: "" }] },
+      toolUseResult: {
+        status: "completed",
+        prompt: "Find the install script and CLI package.json",
+        content: "Here are the results of my research...",
+        agentId: "agent-abc",
+      },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result.toolUseResult.status, "completed");
+    assert.equal(result.toolUseResult.prompt_length, 44);
+    assert.equal(result.toolUseResult.content_length, 38);
+    assert.equal(result.toolUseResult.prompt, undefined);
+    assert.equal(result.toolUseResult.content, undefined);
+  });
+
+  it("removes toolUseResult entirely when no metadata fields present", () => {
+    const record = {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "tu_4", content: "" }] },
+      toolUseResult: {
+        matches: ["WebFetch"],
+        query: "select:WebFetch",
+        total_deferred_tools: 54,
+      },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result.toolUseResult, undefined);
+  });
+
+  it("handles records without toolUseResult", () => {
+    const record = {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "hello" }] },
+    };
+    const result = stripToolResults(record);
+    assert.equal(result.toolUseResult, undefined);
   });
 });
 
