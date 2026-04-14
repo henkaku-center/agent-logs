@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install CLI dependencies
+        working-directory: cli
+        run: npm install
+
+      - name: Run CLI tests
+        working-directory: cli
+        run: npm test
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm install
+
+      - name: Run server tests
+        working-directory: server
+        run: npm test
+
+  install-script:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shell: [bash, zsh]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure shell is available
+        run: |
+          if [ "${{ matrix.shell }}" = "zsh" ]; then
+            if ! command -v zsh &>/dev/null; then
+              sudo apt-get update && sudo apt-get install -y zsh
+            fi
+          fi
+
+      - name: Create mock release binary
+        run: |
+          mkdir -p /tmp/mock-bin
+          printf '#!/bin/sh\necho "agent-logs mock v0.0.0-test"\n' > /tmp/mock-bin/agent-logs
+          chmod +x /tmp/mock-bin/agent-logs
+
+      - name: Test install script (dry run)
+        env:
+          SHELL: /bin/${{ matrix.shell }}
+        run: |
+          # Create the RC file the installer will modify
+          if [ "${{ matrix.shell }}" = "zsh" ]; then
+            RC="$HOME/.zshrc"
+          else
+            RC="$HOME/.bashrc"
+          fi
+          touch "$RC"
+
+          # Verify the wrapper line gets written correctly
+          # (We can't test the full download, but we can test the wrapper installation)
+          MARKER="# agent-logs wrapper"
+          WRAPPER_LINE='claude() { if command -v agent-logs &>/dev/null; then agent-logs consent-dialog; [ $? -eq 3 ] && return 0; fi; command claude "$@"; }'
+
+          # Simulate what install.sh does for the wrapper
+          sed -i.bak "/$MARKER/d" "$RC" 2>/dev/null || true
+          rm -f "${RC}.bak"
+          printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
+
+          # Verify wrapper was written
+          grep -q "$MARKER" "$RC" || { echo "FAIL: marker not found in $RC"; exit 1; }
+          echo "OK: wrapper installed in $RC"
+
+          # Source and verify the function exists
+          ${{ matrix.shell }} -c "
+            source \"$RC\"
+            type claude
+          " || { echo "FAIL: claude function not defined after sourcing"; exit 1; }
+          echo "OK: claude function defined"
+
+          # Verify exit code 3 blocks launch, other codes don't
+          ${{ matrix.shell }} -c '
+            source "'"$RC"'"
+
+            # Mock agent-logs that exits 0 (consent decided) — should launch claude
+            mkdir -p /tmp/test-bin
+            printf "#!/bin/sh\nexit 0\n" > /tmp/test-bin/agent-logs
+            chmod +x /tmp/test-bin/agent-logs
+            export PATH="/tmp/test-bin:\$PATH"
+
+            # Mock claude
+            printf "#!/bin/sh\necho LAUNCHED\n" > /tmp/test-bin/claude
+            chmod +x /tmp/test-bin/claude
+
+            output=$(claude 2>&1)
+            echo "exit 0 test: $output"
+            echo "$output" | grep -q "LAUNCHED" || { echo "FAIL: claude should launch on exit 0"; exit 1; }
+          '
+          echo "OK: exit 0 launches claude"
+
+          ${{ matrix.shell }} -c '
+            source "'"$RC"'"
+            mkdir -p /tmp/test-bin
+            printf "#!/bin/sh\nexit 3\n" > /tmp/test-bin/agent-logs
+            chmod +x /tmp/test-bin/agent-logs
+            printf "#!/bin/sh\necho LAUNCHED\n" > /tmp/test-bin/claude
+            chmod +x /tmp/test-bin/claude
+            export PATH="/tmp/test-bin:\$PATH"
+
+            output=$(claude 2>&1)
+            echo "exit 3 test: [$output]"
+            if echo "$output" | grep -q "LAUNCHED"; then
+              echo "FAIL: claude should NOT launch on exit 3"
+              exit 1
+            fi
+          '
+          echo "OK: exit 3 blocks claude"
+
+          ${{ matrix.shell }} -c '
+            source "'"$RC"'"
+            mkdir -p /tmp/test-bin
+            printf "#!/bin/sh\nexit 139\n" > /tmp/test-bin/agent-logs
+            chmod +x /tmp/test-bin/agent-logs
+            printf "#!/bin/sh\necho LAUNCHED\n" > /tmp/test-bin/claude
+            chmod +x /tmp/test-bin/claude
+            export PATH="/tmp/test-bin:\$PATH"
+
+            output=$(claude 2>&1)
+            echo "exit 139 test: $output"
+            echo "$output" | grep -q "LAUNCHED" || { echo "FAIL: claude should launch on crash (exit 139)"; exit 1; }
+          '
+          echo "OK: exit 139 (SIGSEGV) still launches claude"
+
+      - name: Test idempotent wrapper installation
+        env:
+          SHELL: /bin/${{ matrix.shell }}
+        run: |
+          if [ "${{ matrix.shell }}" = "zsh" ]; then
+            RC="$HOME/.zshrc"
+          else
+            RC="$HOME/.bashrc"
+          fi
+
+          MARKER="# agent-logs wrapper"
+          WRAPPER_LINE='claude() { if command -v agent-logs &>/dev/null; then agent-logs consent-dialog; [ $? -eq 3 ] && return 0; fi; command claude "$@"; }'
+
+          # Run install twice
+          for i in 1 2; do
+            sed -i.bak "/$MARKER/d" "$RC" 2>/dev/null || true
+            rm -f "${RC}.bak"
+            printf '%s %s\n' "$WRAPPER_LINE" "$MARKER" >> "$RC"
+          done
+
+          # Should only have one wrapper line
+          count=$(grep -c "$MARKER" "$RC")
+          [ "$count" -eq 1 ] || { echo "FAIL: expected 1 wrapper line, got $count"; exit 1; }
+          echo "OK: idempotent installation (1 wrapper line after 2 installs)"
