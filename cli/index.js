@@ -80,7 +80,7 @@ async function promptConsent() {
 }
 
 // Commands that don't require authentication
-const PUBLIC_COMMANDS = new Set(["login", "uninstall", "consent-dialog", "consent-status", "context", "sync", undefined]);
+const PUBLIC_COMMANDS = new Set(["login", "update", "uninstall", "consent-dialog", "consent-status", "context", "sync", undefined]);
 
 if (!PUBLIC_COMMANDS.has(command)) {
   const token = readToken();
@@ -293,6 +293,7 @@ switch (command) {
       `  agent-logs withdraw  — stop sharing logs for the current project`,
       `  agent-logs opt-in    — enable research-use (anonymised logs for research, global)`,
       `  agent-logs opt-out   — disable research-use (global)`,
+      `  agent-logs update    — update to the latest version`,
       `  agent-logs doctor    — check configuration and connectivity`,
       `If the participant asks to change sharing or research consent, run the appropriate command.`,
     ].join("\n"));
@@ -455,6 +456,18 @@ Commands:
     break;
   }
 
+  case "update": {
+    const { execSync } = await import("child_process");
+    console.log("Checking for updates...");
+    try {
+      execSync("curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash", { stdio: "inherit" });
+    } catch {
+      console.error("Update failed. Try manually: curl -fsSL https://agent-logs.chibatech.dev/install.sh | bash");
+      process.exit(1);
+    }
+    break;
+  }
+
   case "uninstall": {
     const { rmSync } = await import("fs");
     const { join } = await import("path");
@@ -512,6 +525,7 @@ Commands:
   consent        Start sharing logs for the current project directory
   withdraw       Stop sharing logs for the current project directory
   doctor         Check configuration and connectivity
+  update         Update to the latest version
   uninstall      Remove hooks, config, and CLI`);
     if (command) {
       console.error(`\nUnknown command: ${command}`);
