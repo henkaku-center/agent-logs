@@ -284,6 +284,33 @@ strong { font-weight: 700; }
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 14px;
   line-height: 1.6;
+  position: relative;
+}
+
+.code-block .copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.3);
+  transition: color 0.15s;
+  padding: 0;
+}
+
+.code-block .copy-btn:hover {
+  color: rgba(255,255,255,0.6);
+}
+
+.code-block .copy-btn.copied {
+  color: #66bb6a;
 }
 
 code {
