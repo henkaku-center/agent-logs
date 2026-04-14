@@ -358,6 +358,38 @@ code {
   font-family: inherit;
 }
 
+/* ── OS tabs ── */
+
+.os-tabs {
+  list-style: none;
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #E0E0E0;
+  margin-bottom: 0;
+  padding: 0;
+}
+
+.os-tabs [role="tab"] {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  color: var(--dark-grey);
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.os-tabs [role="tab"]:hover {
+  color: var(--black);
+  border-bottom-color: #ccc;
+}
+
+.os-tabs [aria-selected="true"] {
+  color: var(--black);
+  border-bottom-color: var(--black);
+}
+
 /* ── Steps ── */
 
 .steps {
