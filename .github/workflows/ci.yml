@@ -85,14 +85,18 @@ jobs:
           grep -q "$MARKER" "$RC" || { echo "FAIL: marker not found in $RC"; exit 1; }
           echo "OK: wrapper installed in $RC"
 
+          # Extract just the wrapper line for sourcing (avoids .bashrc non-interactive guard)
+          WRAPPER_FILE=$(mktemp)
+          grep "$MARKER" "$RC" > "$WRAPPER_FILE"
+
           # Source and verify the function exists
           ${{ matrix.shell }} -c "
-            source \"$RC\"
+            source \"$WRAPPER_FILE\"
             declare -f claude >/dev/null
           " || { echo "FAIL: claude function not defined after sourcing"; exit 1; }
           echo "OK: claude function defined"
 
-          # Set up mock binaries before entering subshells
+          # Set up mock binaries
           mkdir -p /tmp/test-bin
           printf '#!/bin/sh\necho LAUNCHED\n' > /tmp/test-bin/claude
           chmod +x /tmp/test-bin/claude
@@ -100,7 +104,7 @@ jobs:
           # Test exit 0 (consent decided) — should launch claude
           printf '#!/bin/sh\nexit 0\n' > /tmp/test-bin/agent-logs
           chmod +x /tmp/test-bin/agent-logs
-          output=$(PATH="/tmp/test-bin:$PATH" ${{ matrix.shell }} -c "source \"$RC\"; claude" 2>&1)
+          output=$(PATH="/tmp/test-bin:$PATH" ${{ matrix.shell }} -c "source \"$WRAPPER_FILE\"; claude" 2>&1)
           echo "exit 0 test: $output"
           echo "$output" | grep -q "LAUNCHED" || { echo "FAIL: claude should launch on exit 0"; exit 1; }
           echo "OK: exit 0 launches claude"
@@ -108,7 +112,7 @@ jobs:
           # Test exit 3 (intentional block) — should NOT launch claude
           printf '#!/bin/sh\nexit 3\n' > /tmp/test-bin/agent-logs
           chmod +x /tmp/test-bin/agent-logs
-          output=$(PATH="/tmp/test-bin:$PATH" ${{ matrix.shell }} -c "source \"$RC\"; claude" 2>&1)
+          output=$(PATH="/tmp/test-bin:$PATH" ${{ matrix.shell }} -c "source \"$WRAPPER_FILE\"; claude" 2>&1)
           echo "exit 3 test: [$output]"
           if echo "$output" | grep -q "LAUNCHED"; then
             echo "FAIL: claude should NOT launch on exit 3"
@@ -119,7 +123,7 @@ jobs:
           # Test exit 139 (SIGSEGV crash) — should launch claude anyway
           printf '#!/bin/sh\nexit 139\n' > /tmp/test-bin/agent-logs
           chmod +x /tmp/test-bin/agent-logs
-          output=$(PATH="/tmp/test-bin:$PATH" ${{ matrix.shell }} -c "source \"$RC\"; claude" 2>&1)
+          output=$(PATH="/tmp/test-bin:$PATH" ${{ matrix.shell }} -c "source \"$WRAPPER_FILE\"; claude" 2>&1)
           echo "exit 139 test: $output"
           echo "$output" | grep -q "LAUNCHED" || { echo "FAIL: claude should launch on crash (exit 139)"; exit 1; }
           echo "OK: exit 139 (SIGSEGV) still launches claude"
