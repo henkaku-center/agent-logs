@@ -423,24 +423,28 @@ switch (command) {
         if (!arg) { console.error("Usage: agent-logs admin add-instructor <email>"); process.exit(1); }
         const data = await authFetch("/admin/roles/instructor", "POST", { email: arg });
         console.log(`Added instructor ${arg}. Instructors: ${data.instructors.join(", ")}`);
+        if (data.warning) { console.error(`Warning: ${data.warning}`); process.exit(2); }
         break;
       }
       case "remove-instructor": {
         if (!arg) { console.error("Usage: agent-logs admin remove-instructor <email>"); process.exit(1); }
         const data = await authFetch("/admin/roles/instructor", "DELETE", { email: arg });
         console.log(`Removed instructor ${arg}. Instructors: ${data.instructors.join(", ")}`);
+        if (data.warning) { console.error(`Warning: ${data.warning}`); process.exit(2); }
         break;
       }
       case "add-researcher": {
         if (!arg) { console.error("Usage: agent-logs admin add-researcher <email>"); process.exit(1); }
         const data = await authFetch("/admin/roles/researcher", "POST", { email: arg });
         console.log(`Added researcher ${arg}. Researchers: ${data.researchers.join(", ")}`);
+        if (data.warning) { console.error(`Warning: ${data.warning}`); process.exit(2); }
         break;
       }
       case "remove-researcher": {
         if (!arg) { console.error("Usage: agent-logs admin remove-researcher <email>"); process.exit(1); }
         const data = await authFetch("/admin/roles/researcher", "DELETE", { email: arg });
         console.log(`Removed researcher ${arg}. Researchers: ${data.researchers.join(", ")}`);
+        if (data.warning) { console.error(`Warning: ${data.warning}`); process.exit(2); }
         break;
       }
       default:

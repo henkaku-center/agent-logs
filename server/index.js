@@ -738,7 +738,7 @@ app.post("/admin/roles/:role", async (req, res) => {
   let warning;
   try { await syncViewAccess(role, list); } catch (err) {
     console.error(`Failed to sync ${role} view access:`, err.message);
-    warning = "IAM sync failed — role saved but BigQuery permissions may be out of sync";
+    warning = `IAM sync failed — role saved but BigQuery permissions are out of sync: ${err.message}`;
   }
 
   res.json({ status: "ok", [`${role}s`]: list, ...(warning && { warning }) });
@@ -762,7 +762,7 @@ app.delete("/admin/roles/:role", async (req, res) => {
   let warning;
   try { await syncViewAccess(role, list); } catch (err) {
     console.error(`Failed to sync ${role} view access:`, err.message);
-    warning = "IAM sync failed — role saved but BigQuery permissions may be out of sync";
+    warning = `IAM sync failed — role saved but BigQuery permissions are out of sync: ${err.message}`;
   }
 
   res.json({ status: "ok", [`${role}s`]: list, ...(warning && { warning }) });
