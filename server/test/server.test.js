@@ -517,6 +517,37 @@ describe("POST /ingest", () => {
     assert.ok(data.server_offset != null);
   });
 
+  it("chunks large batches under BigQuery's 10k parameter limit (regression)", async () => {
+    const token = makeToken("student@chibatech.dev");
+    // 1500 rows × 8 columns = 12,000 params — previously one query, now must split.
+    const lines = Array.from({ length: 1500 }, (_, i) =>
+      JSON.stringify({ type: "user", timestamp: `2026-01-01T00:00:${String(i % 60).padStart(2, "0")}Z`, message: { content: `msg ${i}` } })
+    );
+    const fileOffset = lines.reduce((s, l) => s + Buffer.byteLength(l, "utf8") + 1, 0);
+
+    const qCountBefore = bigqueryQueries.length;
+    const { status, data } = await req("/ingest", {
+      method: "POST",
+      token,
+      body: {
+        project_path: "/chunk-test",
+        session_id: "big_session",
+        file_name: "big.jsonl",
+        offset: 0,
+        file_offset: fileOffset,
+        lines,
+      },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.lines_accepted, 1500);
+
+    const inserts = bigqueryQueries.slice(qCountBefore).filter((q) => q.query.startsWith("INSERT INTO") && q.query.includes("course.logs"));
+    assert.ok(inserts.length >= 2, `expected multiple INSERTs, got ${inserts.length}`);
+    for (const q of inserts) {
+      assert.ok(Object.keys(q.params).length <= 10000, `chunk exceeds BigQuery 10k param limit: ${Object.keys(q.params).length}`);
+    }
+  });
+
   it("accepts records with missing/null nullable fields (regression: BigQuery parameter types)", async () => {
     const token = makeToken("student@chibatech.dev");
     // Record with no `version` field — previously this made insertRows pass null

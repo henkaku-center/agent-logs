@@ -44,6 +44,10 @@ function inferBigQueryType(value) {
   return "STRING";
 }
 
+// BigQuery rejects parameterized queries with > 10,000 parameters. Chunk so
+// each sub-INSERT stays well below the limit.
+const BQ_MAX_PARAMS = 9000;
+
 async function insertRows(table, rows) {
   if (rows.length === 0) return;
   const columns = Object.keys(rows[0]);
@@ -58,23 +62,27 @@ async function insertRows(table, rows) {
     }
     columnTypes[col] = type || "STRING";
   }
-  const valueClauses = [];
-  const params = {};
-  const types = {};
-  for (let i = 0; i < rows.length; i++) {
-    const refs = columns.map((col) => {
-      const key = `r${i}_${col}`;
-      params[key] = rows[i][col] ?? null;
-      types[key] = columnTypes[col];
-      return `@${key}`;
+  const chunkSize = Math.max(1, Math.floor(BQ_MAX_PARAMS / columns.length));
+  for (let start = 0; start < rows.length; start += chunkSize) {
+    const chunk = rows.slice(start, start + chunkSize);
+    const valueClauses = [];
+    const params = {};
+    const types = {};
+    for (let i = 0; i < chunk.length; i++) {
+      const refs = columns.map((col) => {
+        const key = `r${i}_${col}`;
+        params[key] = chunk[i][col] ?? null;
+        types[key] = columnTypes[col];
+        return `@${key}`;
+      });
+      valueClauses.push(`(${refs.join(", ")})`);
+    }
+    await bigquery.query({
+      query: `INSERT INTO \`${PROJECT_ID}.${DATASET}.${table}\` (${columns.join(", ")}) VALUES ${valueClauses.join(", ")}`,
+      params,
+      types,
     });
-    valueClauses.push(`(${refs.join(", ")})`);
   }
-  await bigquery.query({
-    query: `INSERT INTO \`${PROJECT_ID}.${DATASET}.${table}\` (${columns.join(", ")}) VALUES ${valueClauses.join(", ")}`,
-    params,
-    types,
-  });
 }
 
 /* ── Sealed mapping helpers ── */
