@@ -535,7 +535,13 @@ Commands:
   withdraw       Stop sharing logs for the current project directory
   doctor         Check configuration and connectivity
   update         Update to the latest version
-  uninstall      Remove hooks, config, and CLI`);
+  uninstall      Remove hooks, config, and CLI
+
+Exit codes:
+  0    Success
+  1    Usage error or authentication failure
+  2    Partial failure (e.g. role saved but IAM sync failed)
+  3    Consent pending — do not launch Claude`);
     if (command) {
       console.error(`\nUnknown command: ${command}`);
       process.exit(1);

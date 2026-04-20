@@ -77,11 +77,18 @@ async function insertRows(table, rows) {
       });
       valueClauses.push(`(${refs.join(", ")})`);
     }
-    await bigquery.query({
-      query: `INSERT INTO \`${PROJECT_ID}.${DATASET}.${table}\` (${columns.join(", ")}) VALUES ${valueClauses.join(", ")}`,
-      params,
-      types,
-    });
+    try {
+      await bigquery.query({
+        query: `INSERT INTO \`${PROJECT_ID}.${DATASET}.${table}\` (${columns.join(", ")}) VALUES ${valueClauses.join(", ")}`,
+        params,
+        types,
+      });
+    } catch (err) {
+      const chunkIndex = Math.floor(start / chunkSize);
+      const totalChunks = Math.ceil(rows.length / chunkSize);
+      console.error(`insertRows chunk ${chunkIndex + 1}/${totalChunks} failed (${start}–${start + chunk.length} of ${rows.length} rows): ${err.message}`);
+      throw err;
+    }
   }
 }
 

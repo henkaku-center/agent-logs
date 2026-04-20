@@ -1409,6 +1409,27 @@ describe("admin allowlist edge cases", () => {
   });
 });
 
+// ── Admin role management ──
+
+describe("admin role management", () => {
+  it("saves role and returns warning when IAM sync fails", async () => {
+    const token = makeToken("admin@test.com");
+    const { status, data } = await req("/admin/roles/instructor", {
+      method: "POST", token, body: { email: "newguy@test.com" },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.status, "ok");
+    assert.ok(data.instructors.includes("newguy@test.com"));
+    assert.ok(data.warning, "expected a warning field when IAM sync fails");
+    assert.ok(data.warning.includes("IAM sync failed"), `warning should mention IAM sync failure, got: ${data.warning}`);
+
+    // Verify the role was persisted in Firestore despite IAM failure
+    const stored = firestoreData["roles/instructors"];
+    assert.ok(stored, "roles/instructors doc should exist");
+    assert.ok(stored.list.includes("newguy@test.com"), "email should be in stored list");
+  });
+});
+
 // ── OTLP edge cases ──
 
 describe("POST /v1/logs", () => {
