@@ -96,8 +96,14 @@ const mockBigQuery = {
       },
     }),
   }),
-  query: async ({ query, params }) => {
-    bigqueryQueries.push({ query, params });
+  query: async ({ query, params, types }) => {
+    bigqueryQueries.push({ query, params, types });
+    // Mirror real BigQuery: null values must have an explicit type in `types`.
+    for (const [key, value] of Object.entries(params || {})) {
+      if (value === null && !(types && types[key])) {
+        throw new Error("Parameter types must be provided for null values via the 'types' field in query options.");
+      }
+    }
     // Route DML INSERTs to the in-memory row stores so test assertions work
     if (query.startsWith("INSERT INTO")) {
       const isResearch = query.includes("research_logs");
@@ -509,6 +515,33 @@ describe("POST /ingest", () => {
 
     assert.equal(status, 409);
     assert.ok(data.server_offset != null);
+  });
+
+  it("accepts records with missing/null nullable fields (regression: BigQuery parameter types)", async () => {
+    const token = makeToken("student@chibatech.dev");
+    // Record with no `version` field — previously this made insertRows pass null
+    // without a types hint, triggering a BigQuery 500 on every /ingest call.
+    const line = JSON.stringify({ type: "user", timestamp: "2026-01-01T00:00:00Z", message: { content: "hello" } });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+    const { status, data } = await req("/ingest", {
+      method: "POST",
+      token,
+      body: {
+        project_path: "/test",
+        session_id: "null_version_session",
+        file_name: "null_version_session.jsonl",
+        offset: 0,
+        file_offset: fileOffset,
+        lines: [line],
+      },
+    });
+    assert.equal(status, 200);
+    assert.equal(data.lines_accepted, 1);
+
+    const insert = bigqueryQueries.find((q) => q.query.startsWith("INSERT INTO") && q.query.includes("course.logs"));
+    assert.ok(insert, "expected an INSERT INTO course.logs");
+    assert.equal(insert.params.r0_version, null);
+    assert.equal(insert.types.r0_version, "STRING", "null version param must carry a STRING type hint");
   });
 });
 
