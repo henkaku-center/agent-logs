@@ -35,15 +35,37 @@ const SEALED_MAPPING_KEY = process.env.SEALED_MAPPING_KEY || null;
 
 /* ── BigQuery DML insert (avoids streaming buffer so rows are immediately mutable) ── */
 
+function inferBigQueryType(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return "STRING";
+  if (typeof value === "boolean") return "BOOL";
+  if (typeof value === "number") return Number.isInteger(value) ? "INT64" : "FLOAT64";
+  if (value instanceof Date) return "TIMESTAMP";
+  return "STRING";
+}
+
 async function insertRows(table, rows) {
   if (rows.length === 0) return;
   const columns = Object.keys(rows[0]);
+  // Infer a type per column from the first non-null sample; fall back to STRING.
+  // BigQuery requires an explicit type for any parameter whose value is null.
+  const columnTypes = {};
+  for (const col of columns) {
+    let type = null;
+    for (const row of rows) {
+      type = inferBigQueryType(row[col]);
+      if (type) break;
+    }
+    columnTypes[col] = type || "STRING";
+  }
   const valueClauses = [];
   const params = {};
+  const types = {};
   for (let i = 0; i < rows.length; i++) {
     const refs = columns.map((col) => {
       const key = `r${i}_${col}`;
       params[key] = rows[i][col] ?? null;
+      types[key] = columnTypes[col];
       return `@${key}`;
     });
     valueClauses.push(`(${refs.join(", ")})`);
@@ -51,6 +73,7 @@ async function insertRows(table, rows) {
   await bigquery.query({
     query: `INSERT INTO \`${PROJECT_ID}.${DATASET}.${table}\` (${columns.join(", ")}) VALUES ${valueClauses.join(", ")}`,
     params,
+    types,
   });
 }
 
