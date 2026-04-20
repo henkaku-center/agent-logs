@@ -672,7 +672,10 @@ async function saveSurvey(completed) {
       body: { survey_id: surveyId, responses, completed },
     });
     if (completed) {
-      loadSurvey();
+      // Re-render so the Sign button is visible if the user cancels the modal,
+      // then immediately prompt to sign — avoids a two-step reveal.
+      await loadSurvey();
+      window.signSurvey(surveyId);
     }
   } catch (err) {
     alert(`Failed to save: ${err.message}`);
