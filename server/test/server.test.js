@@ -1631,6 +1631,34 @@ describe("research logs dual-write", () => {
     assert.equal(researchRows[0].revoked, false);
   });
 
+  it("uses the same fallback timestamp in course.logs and research_logs (regression)", async () => {
+    const token = makeToken("student@chibatech.dev");
+    const researchToken = makeResearchToken("anon-ts");
+    firestoreData["consent/student@chibatech.dev"] = { research_use: true };
+
+    // permission-mode records have no top-level `timestamp` field — both
+    // writes previously fell through to independent `new Date()` calls.
+    const line = JSON.stringify({ type: "permission-mode", permissionMode: "default", sessionId: "rs-ts" });
+    const fileOffset = Buffer.byteLength(line, "utf8") + 1;
+
+    await req("/ingest", {
+      method: "POST", token,
+      body: {
+        project_path: "/test", session_id: "rs-ts", file_name: "rs-ts.jsonl",
+        offset: 0, file_offset: fileOffset,
+        lines: [line], research_token: researchToken,
+      },
+    });
+
+    assert.equal(bigqueryRows.length, 1);
+    assert.equal(researchRows.length, 1);
+    assert.equal(
+      bigqueryRows[0].timestamp,
+      researchRows[0].timestamp,
+      "course.logs and research_logs must share the same timestamp for dedup"
+    );
+  });
+
   it("skips research_logs when research_use is false", async () => {
     const token = makeToken("student@chibatech.dev");
     const researchToken = makeResearchToken("anon-abc");

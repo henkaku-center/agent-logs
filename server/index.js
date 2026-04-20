@@ -470,13 +470,24 @@ app.post("/ingest", async (req, res) => {
         try { return JSON.parse(line); } catch { return {}; }
       });
 
+      // Resolve each line's timestamp ONCE here so the course.logs write and
+      // the optional research.logs dual-write share an identical value.
+      // Records without a top-level `timestamp` field (permission-mode,
+      // custom-title, queue-operation, summary) previously took the fallback
+      // branch twice — ms apart — and the mismatch broke the documented
+      // (session_id, file_name, timestamp) dedup key used by the backfill.
+      const fallbackNow = new Date().toISOString();
+      const timestamps = parsed.map((p) =>
+        p.timestamp ? new Date(p.timestamp).toISOString() : fallbackNow
+      );
+
       const rows = linesToInsert.map((line, i) => ({
         participant_id: participantId,
         project_path,
         session_id,
         file_name,
         record_type: parsed[i].type || "unknown",
-        timestamp: parsed[i].timestamp ? new Date(parsed[i].timestamp).toISOString() : new Date().toISOString(),
+        timestamp: timestamps[i],
         version: parsed[i].version || null,
         data: line,
       }));
@@ -519,21 +530,17 @@ app.post("/ingest", async (req, res) => {
           const consentDoc = await firestore.doc(`consent/${participantId}`).get();
           if (consentDoc.exists && consentDoc.data().research_use) {
             const projectHash = createHash("sha256").update(project_path).digest("hex");
-            const researchRows = linesToInsert.map((line) => {
-              let parsed;
-              try { parsed = JSON.parse(line); } catch { parsed = {}; }
-              return {
-                anon_id: researchPayload.anon_id,
-                project_hash: projectHash,
-                session_id,
-                file_name,
-                record_type: parsed.type || "unknown",
-                timestamp: parsed.timestamp ? new Date(parsed.timestamp).toISOString() : new Date().toISOString(),
-                version: parsed.version || null,
-                data: anonymizeRecord(line),
-                revoked: false,
-              };
-            });
+            const researchRows = linesToInsert.map((line, i) => ({
+              anon_id: researchPayload.anon_id,
+              project_hash: projectHash,
+              session_id,
+              file_name,
+              record_type: parsed[i].type || "unknown",
+              timestamp: timestamps[i],
+              version: parsed[i].version || null,
+              data: anonymizeRecord(line),
+              revoked: false,
+            }));
             await insertRows(RESEARCH_TABLE, researchRows);
           }
         } catch (err) {
