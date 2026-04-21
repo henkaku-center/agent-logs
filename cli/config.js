@@ -44,10 +44,10 @@ export function isShared(projects, path) {
   return projects.shared.some((s) => s.path === path);
 }
 
-/** Add a path to shared with current timestamp, removing from withdrawn */
-export function addShared(projects, path) {
+/** Add a path to shared, removing from withdrawn. Uses provided timestamp or now. */
+export function addShared(projects, path, consentedAt) {
   projects.shared = projects.shared.filter((s) => s.path !== path);
-  projects.shared.push({ path, consented_at: new Date().toISOString() });
+  projects.shared.push({ path, consented_at: consentedAt || new Date().toISOString() });
   projects.withdrawn = projects.withdrawn.filter((p) => p !== path);
 }
 

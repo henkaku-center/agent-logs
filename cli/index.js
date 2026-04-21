@@ -291,8 +291,10 @@ switch (command) {
     // Auto-share for students who signed the consent form but haven't
     // explicitly shared/withdrawn this folder. Covers VS Code and JetBrains
     // launches that bypass the shell wrapper consent-dialog.
+    // Use the portal signed_at as consented_at so historical records from
+    // after the student signed consent are synced, not just future ones.
     if (!shared && !withdrawn && projects.signed_at) {
-      addShared(projects, hookCwd);
+      addShared(projects, hookCwd, projects.signed_at);
       writeProjects(projects);
       shared = true;
     }
