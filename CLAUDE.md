@@ -7,9 +7,9 @@ Session log collection system for Claude Code usage in CIT courses (APS-I, Web3/
 ```
 Student machine                     GCP (agent-logging project)
 ─────────────────                   ────────────────────────────
-Claude Code + agent-logs CLI        Cloud Run (agent-logs-ingestion)
+Claude Code (CLI/VS Code/JetBrains) Cloud Run (agent-logs-ingestion)
   ↓ SessionStart hook                 ↓
-  consent-dialog (forced Y/N)       POST /ingest → BigQuery course.logs
+  auto-share (if consent signed)    POST /ingest → BigQuery course.logs
   ↓ Stop/SubagentStop/SessionEnd      ↓ (if research_use)
   agent-logs sync (byte-offset)     Phase 1 anonymize → BigQuery research_logs
                                       ↓
@@ -31,11 +31,11 @@ Web portal (GitHub Pages)           Same Cloud Run service
 
 ```bash
 # Server
-cd server && npm test                    # 93 tests, node:test with mocked GCP
+cd server && npm test
 cd server && gcloud run deploy agent-logs-ingestion --source . --project=agent-logging --region=asia-northeast1
 
 # CLI
-cd cli && npm test                       # 70 tests
+cd cli && npm test
 
 # Admin (requires admin JWT)
 agent-logs admin list                    # Show allowlist
@@ -81,16 +81,19 @@ Server changes require Cloud Run deployment (see deployment checklist below).
 - **BigQuery `course.logs_view`** — `WHERE revoked = FALSE` (for instructors)
 - **BigQuery `course.research_logs_view`** — `WHERE revoked = FALSE` (for researchers)
 - **BigQuery `course.cowork_events`** — OTLP telemetry from Claude Cowork
-- **Firestore `consent/{email}`** — Research-use toggle, signed_at
+- **Firestore `consent/{email}`** — Research-use toggle, signed_at, consented_at, consent_pdf
 - **Firestore `sealed_mapping/{sha256(email)}`** — AES-256-GCM encrypted {email, anon_id}
 - **Firestore `offsets/{participant}/{session}/{file}`** — Byte-offset dedup ledger
 - **Firestore `roles/instructors`, `roles/researchers`** — BigQuery access lists
 - **Firestore `allowlist/domains`, `allowlist/emails`** — Authorized participants
 - **Cloud Run `agent-logs-ingestion`** — Serverless, scales to zero
+- **Cloud Monitoring** — 5xx alert policy on agent-logs-ingestion (emails admin on sustained errors)
 
 ## Access control
 
 Instructors get `bigquery.dataViewer` on `logs_view` only. Researchers get `bigquery.dataViewer` on `research_logs_view` only. Both get `bigquery.jobUser` at project level to run queries. Managed via `agent-logs admin add-instructor/add-researcher`. Any Google account (including @gmail.com) works.
+
+The Cloud Run service account requires `roles/resourcemanager.projectIamAdmin` (to manage project-level `bigquery.jobUser` bindings) and `roles/bigquery.dataOwner` (to set view-level IAM policies). Without these, the role-sync silently fails — the CLI now exits with code 2 and prints the error if this happens.
 
 The `SEALED_MAPPING_KEY` env var on Cloud Run is the only way to link anon_id to email. Destroyed 1 month post-course.
 
@@ -98,9 +101,10 @@ The `SEALED_MAPPING_KEY` env var on Cloud Run is the only way to link anon_id to
 
 1. Claude Code hooks (`Stop`, `SubagentStop`, `SessionEnd`) trigger `agent-logs sync`
 2. CLI reads JSONL from `~/.claude/projects/{dir}/`, filters by `ALLOWED_TYPES`, strips `tool_result` content, preserves `toolUseResult` metadata (size/status signals only)
-3. POSTs to `/ingest` with JWT auth + research token
-4. Server writes to `course.logs` (BigQuery), then advances offset in Firestore (write-before-advance pattern — critical for data loss prevention)
-5. Optionally dual-writes to `research_logs` (if research_use=true)
+3. Per-line consent filter: records with `timestamp < consented_at` for that project are dropped
+4. POSTs to `/ingest` with JWT auth + research token
+5. Server writes to `course.logs` (BigQuery) in chunked batches (≤9,000 params per query to stay under BigQuery's 10k limit), then advances offset in Firestore (write-before-advance pattern — critical for data loss prevention)
+6. Optionally dual-writes to `research_logs` (if research_use=true), using the same pre-computed timestamps to ensure the (session_id, file_name, timestamp) dedup key is consistent across both tables
 
 ### JSONL record types synced (ALLOWED_TYPES in cli/sync.js)
 
@@ -136,19 +140,27 @@ Key promises:
 
 Note: the consent form language ("session logs capture the full content of your interactions") already covers collecting more than what is currently synced. The `tool_result` stripping is a privacy safeguard beyond what was promised.
 
-## Shell wrapper and consent-dialog
+## Shell wrapper, consent-dialog, and auto-share
 
 The install script adds a shell function to `.bashrc`/`.zshrc`:
 ```bash
 claude() { if command -v agent-logs &>/dev/null; then agent-logs consent-dialog; [ $? -eq 3 ] && return 0; fi; command claude "$@"; }
 ```
 
+This wrapper only fires for terminal launches. VS Code and JetBrains extensions call the `claude` binary directly, bypassing it. To ensure all surfaces are covered, the `SessionStart` hook (`agent-logs context`) auto-shares folders for students who have signed the consent form but haven't explicitly shared or withdrawn the current folder. The auto-share uses the portal `signed_at` timestamp as `consented_at`, so historical records from after the student signed consent are synced — not just future ones.
+
+A self-healing repair step also runs on each SessionStart: if any shared folder has `consented_at` newer than `signed_at` (from a previous bug), it is backdated to `signed_at`.
+
 Exit code semantics for `consent-dialog`:
 - **Exit 0**: consent already decided (shared or withdrawn) — proceed to launch Claude
 - **Exit 3**: intentional block (consent form not signed, user pressed Esc) — don't launch Claude
 - **Any other exit** (1, 139/SIGSEGV, etc.): unexpected error/crash — launch Claude anyway
 
-This design prevents crashes (e.g. SIGSEGV from `/dev/tty` raw mode in IDE terminals) from blocking Claude launch.
+CLI exit codes (all commands):
+- **0**: success
+- **1**: usage error or authentication failure
+- **2**: partial failure (e.g. role saved but IAM sync failed)
+- **3**: consent pending — do not launch Claude
 
 ## Known data integrity risks
 
@@ -156,6 +168,7 @@ This design prevents crashes (e.g. SIGSEGV from `/dev/tty` raw mode in IDE termi
 2. **Research dual-write is fire-and-forget**: if BigQuery insert fails after main write, research rows are lost until next consent toggle triggers backfill (now row-level dedup).
 3. **Duplicate BQ rows on concurrent identical requests**: two requests with the same offset can both write to BigQuery before the Firestore transaction guard. Duplicates are safe and dedup-able in queries.
 4. **No dead-letter queue**: failed syncs wait until the next hook trigger. JSONL files persist on disk so nothing is lost, just delayed.
+5. **Chunked INSERT partial success**: large batches are split into sub-queries. If chunk N fails after chunks 1..N-1 succeeded, those rows are in BigQuery but the offset doesn't advance. Client retries the full batch, producing duplicates of earlier chunks. Failure is logged with chunk index and row range for traceability.
 
 ## Scalability (tested for 300 participants × 3 concurrent sessions)
 
@@ -169,6 +182,8 @@ This design prevents crashes (e.g. SIGSEGV from `/dev/tty` raw mode in IDE termi
 | Product | Log capture method | What's missing |
 |---|---|---|
 | Claude Code CLI | JSONL sync (richest) + optional OTel | Nothing — full conversation both sides |
+| Claude Code VS Code extension | JSONL sync (same as CLI) + SessionStart auto-share | Nothing — hooks fire on all surfaces |
+| Claude Code JetBrains extension | JSONL sync (same as CLI) + SessionStart auto-share | Nothing — hooks fire on all surfaces |
 | Claude Cowork (Desktop) | OTel only (Team/Enterprise admin config) | Assistant response text not in OTel |
 | Claude Code Web | **No mechanism** (open feature request) | Complete blind spot |
 | Claude Chat (claude.ai) | Enterprise data export only (manual) | No programmatic access to content |
@@ -182,6 +197,7 @@ After any server change:
 1. `cd server && npm test` — all tests must pass
 2. `git push origin main` — updates GitHub Pages portal
 3. `gcloud run deploy agent-logs-ingestion --source . --project=agent-logging --region=asia-northeast1`
+4. Verify no 5xx errors in Cloud Run logs for the new revision
 
 After CLI changes:
 1. `cd cli && npm test` — all tests must pass
@@ -197,3 +213,13 @@ After CLI changes:
 - `ADMIN_EMAILS` — Comma-separated admin emails
 - `OTLP_SECRET` — Shared secret for OTLP telemetry ingestion
 - `GCP_PROJECT` — Default: agent-logging
+
+## Service account permissions
+
+The Cloud Run default compute service account requires:
+- `roles/bigquery.dataOwner` — set IAM policies on views for instructor/researcher grants
+- `roles/bigquery.jobUser` — run queries (inserts, backfill)
+- `roles/datastore.user` — read/write Firestore (consent, offsets, roles)
+- `roles/resourcemanager.projectIamAdmin` — manage project-level IAM (bigquery.jobUser bindings)
+- `roles/iam.serviceAccountTokenCreator` — sign JWTs for Gmail API delegation
+- `roles/artifactregistry.writer`, `roles/storage.objectAdmin` — Cloud Build artifacts
