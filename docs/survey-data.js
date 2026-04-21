@@ -1,6 +1,3 @@
-// Agent Logs — Survey question definitions
-// Source: IRB-approved survey instruments (Japanese version)
-// Phases: pre_course (Session 1), mid_course (Session 6), post_course (Session 13)
 
 const SURVEYS = {
   pre_course: {
@@ -233,9 +230,8 @@ const SURVEYS = {
   post_course: {
     title: "Post-Course Survey / 事後調査",
     description: "Final survey measuring changes in your AI collaboration skills. Takes approximately 25-30 minutes. Sections A1-A5 are repeated from the pre-study survey. / AI協働スキルの変化を測定する最終アンケートです。所要時間は約25〜30分です。セクションA1-A5は事前アンケートの繰り返しです。",
-    sections: [], // Uses sections A1-A5 from pre_course (filtered by phase)
+    sections: [],
   },
 };
 
-// Export for use in portal.js
 if (typeof window !== "undefined") window.SURVEYS = SURVEYS;

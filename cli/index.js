@@ -21,7 +21,6 @@ async function promptConsent() {
   const fs = await import("fs");
   const tty = await import("tty");
 
-  // Skip interactive prompt if not a real terminal (IDE terminals, pipes, etc.)
   if (!process.stdin.isTTY && !process.stdout.isTTY) {
     return false;
   }
@@ -45,11 +44,9 @@ async function promptConsent() {
     const no = selected === 1
       ? `  ${cyan("❯")} ${bold("2.")} ${bold("No, don't share")}`
       : `    ${dim("2.")} ${dim("No, don't share")}`;
-    // Move cursor up 4 lines, clear them, redraw
     ttyOut.write(`\x1b[4A\x1b[J${yes}\n${no}\n\n  ${dim("Enter to confirm · Esc to cancel")}\n`);
   };
 
-  // Initial draw
   ttyOut.write(`\n  ${cyan("❯")} ${bold("1.")} ${bold("Yes, share this folder")}\n    ${dim("2.")} ${dim("No, don't share")}\n\n  ${dim("Enter to confirm · Esc to cancel")}\n`);
 
   ttyIn.setRawMode(true);
@@ -58,17 +55,14 @@ async function promptConsent() {
     ttyIn.on("data", (buf) => {
       const str = buf.toString();
 
-      // Ctrl-C or Esc — cancel (skip, ask again next time)
       if (buf[0] === 3 || (buf[0] === 27 && buf.length === 1)) {
         resolve(null);
         return;
       }
 
-      // Arrow up / Arrow down
       if (str === "\x1b[A" || str === "1") { selected = 0; render(); return; }
       if (str === "\x1b[B" || str === "2") { selected = 1; render(); return; }
 
-      // Enter — confirm current selection
       if (str === "\r" || str === "\n") {
         resolve(selected === 0);
         return;
@@ -84,7 +78,6 @@ async function promptConsent() {
   return result;
 }
 
-// Commands that don't require authentication
 const PUBLIC_COMMANDS = new Set(["login", "update", "uninstall", "consent-dialog", "consent-status", "context", "sync", undefined]);
 
 if (!PUBLIC_COMMANDS.has(command)) {
@@ -101,12 +94,10 @@ switch (command) {
     try {
       const result = await login();
 
-      // Initialize projects config
       const projects = readProjects();
       projects.participant_id = result.email;
       writeProjects(projects);
 
-      // Register Claude Code hooks
       registerHooks();
       console.log("Claude Code hooks registered.");
       console.log("Setup complete. Use `agent-logs consent` in a project directory to start sharing.");
@@ -184,16 +175,12 @@ switch (command) {
   }
 
   case "consent-dialog": {
-    // Runs BEFORE claude launches (called by shell wrapper, not a hook).
-    // If folder state is already known, exits immediately. Otherwise
-    // shows an interactive Y/n prompt like Claude's own trust dialog.
     const cwd = process.cwd();
 
     const dim = (s) => `\x1b[2m${s}\x1b[0m`;
     const bold = (s) => `\x1b[1m${s}\x1b[0m`;
     const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 
-    // Not logged in or expired — initiate login
     const storedToken = readToken();
     if (!storedToken?.token) {
       try {
@@ -208,14 +195,12 @@ switch (command) {
       }
     }
 
-    // Sync consent from server (also caches signed_at locally)
     const projects = readProjects();
     const token = (storedToken || readToken())?.token;
     if (token && await syncConsent(projects, token, INGESTION_URL)) {
       writeProjects(projects);
     }
 
-    // Block launch if consent form not signed
     if (!projects.signed_at) {
       const cols = process.stdout.columns || 89;
       console.log([
@@ -233,10 +218,8 @@ switch (command) {
       process.exit(3);
     }
 
-    // Already decided — skip
     if (isShared(projects, cwd) || projects.withdrawn.includes(cwd)) break;
 
-    // Unknown folder — show consent dialog
     const cols = process.stdout.columns || 89;
     const cyanLine = cyan("─".repeat(cols));
     const bannerLines = [
@@ -256,7 +239,6 @@ switch (command) {
 
     const choice = await promptConsent();
 
-    // Clear dialog: banner lines + 1 (console.log newline) + 5 (prompt lines)
     const totalLines = bannerLines.length + 1 + 5;
     process.stdout.write(`\x1b[${totalLines}A\x1b[J`);
 
@@ -267,13 +249,11 @@ switch (command) {
       removeShared(projects, cwd);
       writeProjects(projects);
     }
-    // choice === null (Esc) — do nothing, ask again next time, don't launch claude
     if (choice === null) process.exit(3);
     break;
   }
 
   case "context": {
-    // SessionStart hook — injects agent-logs awareness into Claude's context via stdout
     const projects = readProjects();
     let hookCwd = process.cwd();
     try {
@@ -288,19 +268,12 @@ switch (command) {
     let shared = isShared(projects, hookCwd);
     const withdrawn = projects.withdrawn.includes(hookCwd);
 
-    // Auto-share for students who signed the consent form but haven't
-    // explicitly shared/withdrawn this folder. Covers VS Code and JetBrains
-    // launches that bypass the shell wrapper consent-dialog.
-    // Use the portal signed_at as consented_at so historical records from
-    // after the student signed consent are synced, not just future ones.
     if (!shared && !withdrawn && projects.signed_at) {
       addShared(projects, hookCwd, projects.signed_at);
       writeProjects(projects);
       shared = true;
     }
 
-    // Repair: if any folder was auto-shared with consented_at > signed_at
-    // (from the v0.3.4 bug), backdate to signed_at so historical records sync.
     if (projects.signed_at) {
       let repaired = false;
       for (const entry of projects.shared) {
@@ -314,7 +287,6 @@ switch (command) {
 
     const status = shared ? "shared" : withdrawn ? "not shared" : "unknown";
 
-    // stdout → injected into Claude's context
     console.log([
       `[agent-logs] Session logs for this project are ${status}.`,
       `Participant: ${projects.participant_id}. Research-use: ${projects.research_use ? "opted in" : "not enrolled"}.`,
@@ -331,7 +303,6 @@ switch (command) {
   }
 
   case "consent-status": {
-    // StatusLine command — reads JSON from stdin, outputs colored status
     const projects = readProjects();
     let input = "";
     for await (const chunk of process.stdin) input += chunk;
@@ -526,7 +497,6 @@ Commands:
       console.log(`${launcher} already removed.`);
     }
 
-    // Remove claude wrapper function from shell configs
     const { readFileSync: readF, writeFileSync: writeF } = await import("fs");
     const removedFrom = [];
     for (const rc of [join(homedir(), ".bashrc"), join(homedir(), ".zshrc")]) {
@@ -539,7 +509,6 @@ Commands:
           console.log(`Removed claude wrapper from ${rc}`);
         }
       } catch {
-        // File doesn't exist — skip
       }
     }
 

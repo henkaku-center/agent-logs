@@ -8,7 +8,6 @@ import { randomInt, randomUUID, createHash, createHmac, createCipheriv, createDe
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 
-// CORS for portal (GitHub Pages → Cloud Run)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin === "https://agent-logs.chibatech.dev" || origin?.startsWith("http://localhost")) {
@@ -44,15 +43,11 @@ function inferBigQueryType(value) {
   return "STRING";
 }
 
-// BigQuery rejects parameterized queries with > 10,000 parameters. Chunk so
-// each sub-INSERT stays well below the limit.
 const BQ_MAX_PARAMS = 9000;
 
 async function insertRows(table, rows) {
   if (rows.length === 0) return;
   const columns = Object.keys(rows[0]);
-  // Infer a type per column from the first non-null sample; fall back to STRING.
-  // BigQuery requires an explicit type for any parameter whose value is null.
   const columnTypes = {};
   for (const col of columns) {
     let type = null;
@@ -158,7 +153,6 @@ function anonymizeRecord(jsonString) {
   return JSON.stringify(record);
 }
 
-/** Admin emails that can manage the allowlist */
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "grisha@henkaku.center,contact@gszep.com")
   .split(",")
   .map((e) => e.trim().toLowerCase());
@@ -187,10 +181,6 @@ function isAdmin(email) {
 
 /* ── Auth ── */
 
-/**
- * Authenticate requests via JWT Bearer token.
- * Returns the email from the token payload.
- */
 function authenticate(req) {
   const header = req.headers.authorization;
   if (!header || !header.toLowerCase().startsWith("bearer ")) {
@@ -208,10 +198,6 @@ function authenticate(req) {
 }
 
 /**
- * Send a verification code via Gmail API.
- * Uses the Cloud Run service account with domain-wide delegation
- * to send as the GMAIL_SENDER user.
- *
  * On Cloud Run, the metadata server provides access tokens but doesn't
  * support the 'subject' claim needed for domain-wide delegation.
  * We use the IAM signBlob API to create a self-signed JWT with the
@@ -222,7 +208,6 @@ async function getGmailAuth() {
   const client = await auth.getClient();
   const saEmail = (await auth.getCredentials()).client_email;
 
-  // Create a JWT assertion with subject claim for domain-wide delegation
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     iss: saEmail,
@@ -236,7 +221,6 @@ async function getGmailAuth() {
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const unsigned = `${headerB64}.${payloadB64}`;
 
-  // Sign using IAM signBlob API (no key file needed)
   const iam = google.iam({ version: "v1", auth: client });
   const signResponse = await iam.projects.serviceAccounts.signBlob({
     name: `projects/-/serviceAccounts/${saEmail}`,
@@ -247,7 +231,6 @@ async function getGmailAuth() {
 
   const signedJwt = `${unsigned}.${signature}`;
 
-  // Exchange for access token
   const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -258,7 +241,6 @@ async function getGmailAuth() {
     throw new Error(`Token exchange failed: ${JSON.stringify(tokenData)}`);
   }
 
-  // Return an OAuth2Client with the access token
   const oauth2Client = new google.auth.OAuth2();
   oauth2Client.setCredentials({ access_token: tokenData.access_token });
   return oauth2Client;
@@ -297,10 +279,6 @@ async function sendVerificationEmail(to, code) {
 
 /* ── Magic code auth endpoints ── */
 
-/**
- * POST /auth/send-code
- * Checks allowlist, generates a 6-digit code, emails it.
- */
 app.post("/auth/send-code", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Missing email" });
@@ -313,10 +291,8 @@ app.post("/auth/send-code", async (req, res) => {
     });
   }
 
-  // Generate 6-digit code
   const code = String(randomInt(100000, 999999));
 
-  // Store in Firestore with 10-minute TTL
   await firestore.doc(`auth_codes/${normalized}`).set({
     code,
     created_at: new Date(),
@@ -324,7 +300,6 @@ app.post("/auth/send-code", async (req, res) => {
     attempts: 0,
   });
 
-  // Send email
   try {
     await sendVerificationEmail(normalized, code);
   } catch (err) {
@@ -335,10 +310,6 @@ app.post("/auth/send-code", async (req, res) => {
   res.json({ status: "ok", message: `Verification code sent to ${normalized}` });
 });
 
-/**
- * POST /auth/verify-code
- * Validates the code, returns a signed JWT.
- */
 app.post("/auth/verify-code", async (req, res) => {
   const { email, code } = req.body;
   if (!email || !code) return res.status(400).json({ error: "Missing email or code" });
@@ -353,27 +324,22 @@ app.post("/auth/verify-code", async (req, res) => {
 
   const data = doc.data();
 
-  // Check expiry
   if (new Date() > data.expires_at.toDate()) {
     await ref.delete();
     return res.status(401).json({ error: "Code expired. Request a new one." });
   }
 
-  // Rate limit: max 5 attempts
   if (data.attempts >= 5) {
     await ref.delete();
     return res.status(429).json({ error: "Too many attempts. Request a new code." });
   }
 
-  // Increment attempts
   await ref.update({ attempts: data.attempts + 1 });
 
-  // Check code
   if (data.code !== code.trim()) {
     return res.status(401).json({ error: `Incorrect code. ${4 - data.attempts} attempts remaining.` });
   }
 
-  // Code is valid — delete it and issue JWT
   await ref.delete();
 
   const token = jwt.sign(
@@ -382,7 +348,6 @@ app.post("/auth/verify-code", async (req, res) => {
     { expiresIn: "90d" }
   );
 
-  // Issue research token (sealed mapping)
   let researchToken;
   if (SEALED_MAPPING_KEY) {
     try {
@@ -425,7 +390,7 @@ app.post("/ingest", async (req, res) => {
     });
   }
 
-  // Verify research token upfront (used after course.logs write)
+
   let researchPayload = null;
   if (research_token && SEALED_MAPPING_KEY) {
     try {
@@ -455,7 +420,6 @@ app.post("/ingest", async (req, res) => {
     let linesSkipped = 0;
     const serverOffset = file_offset;
 
-    // Phase 1: Check offset ledger (read-only, no commit yet)
     const ledgerDoc = await ledgerRef.get();
     const currentOffset = ledgerDoc.exists ? ledgerDoc.data().offset : 0;
 
@@ -471,18 +435,11 @@ app.post("/ingest", async (req, res) => {
       linesSkipped = 0;
     }
 
-    // Phase 2: Write data to BigQuery BEFORE advancing the offset
     if (linesToInsert.length > 0) {
       const parsed = linesToInsert.map((line) => {
         try { return JSON.parse(line); } catch { return {}; }
       });
 
-      // Resolve each line's timestamp ONCE here so the course.logs write and
-      // the optional research.logs dual-write share an identical value.
-      // Records without a top-level `timestamp` field (permission-mode,
-      // custom-title, queue-operation, summary) previously took the fallback
-      // branch twice — ms apart — and the mismatch broke the documented
-      // (session_id, file_name, timestamp) dedup key used by the backfill.
       const fallbackNow = new Date().toISOString();
       const timestamps = parsed.map((p) =>
         p.timestamp ? new Date(p.timestamp).toISOString() : fallbackNow
@@ -501,11 +458,9 @@ app.post("/ingest", async (req, res) => {
 
       await insertRows(TABLE, rows);
 
-      // Phase 3: Advance offset only after BigQuery write succeeds
       await firestore.runTransaction(async (tx) => {
         const freshDoc = await tx.get(ledgerRef);
         const freshOffset = freshDoc.exists ? freshDoc.data().offset : 0;
-        // Only advance if no concurrent request already moved past us
         if (freshOffset === offset) {
           tx.set(ledgerRef, { offset: serverOffset, updated_at: new Date() });
         }
@@ -531,7 +486,6 @@ app.post("/ingest", async (req, res) => {
         }
       }
 
-      // Dual-write to research.logs if participant opted in
       if (researchPayload) {
         try {
           const consentDoc = await firestore.doc(`consent/${participantId}`).get();
@@ -670,7 +624,6 @@ async function syncViewAccess(role, emails) {
   const auth = new google.auth.GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const crm = google.cloudresourcemanager({ version: "v1", auth });
 
-  // Fetch view IAM, project IAM, and the other role's list in parallel
   const otherRole = role === "instructor" ? "researchers" : "instructors";
   const [[viewPolicy], { data: projPolicy }, otherDoc] = await Promise.all([
     view.getIamPolicy(),
@@ -678,7 +631,6 @@ async function syncViewAccess(role, emails) {
     firestore.doc(`roles/${otherRole}`).get(),
   ]);
 
-  // Update view-level dataViewer
   viewPolicy.bindings = (viewPolicy.bindings || []).filter(
     (b) => b.role !== "roles/bigquery.dataViewer"
   );
@@ -689,7 +641,6 @@ async function syncViewAccess(role, emails) {
     });
   }
 
-  // Update project-level jobUser
   if (!projPolicy.bindings) projPolicy.bindings = [];
   let jobBinding = projPolicy.bindings.find((b) => b.role === "roles/bigquery.jobUser");
   if (!jobBinding) {
@@ -704,7 +655,6 @@ async function syncViewAccess(role, emails) {
     ...allRoleEmails,
   ];
 
-  // Write both policies in parallel
   await Promise.all([
     view.setIamPolicy(viewPolicy),
     crm.projects.setIamPolicy({ resource: PROJECT_ID, requestBody: { policy: projPolicy } }),
@@ -777,7 +727,6 @@ app.delete("/admin/roles/:role", async (req, res) => {
 
 /* ── Portal helpers ── */
 
-/** Auth middleware — extracts email from JWT or returns 401 */
 function requireAuth(req, res) {
   try { return authenticate(req); } catch (err) {
     res.status(401).json({ error: err.message });
@@ -785,7 +734,6 @@ function requireAuth(req, res) {
   }
 }
 
-/** Cached survey config (refreshed every 60s) */
 let _surveyConfigCache = null;
 let _surveyConfigExpiry = 0;
 async function getUnlockedSurveys() {
@@ -799,7 +747,6 @@ export function resetSurveyCache() { _surveyConfigCache = null; _surveyConfigExp
 
 /* ── Portal endpoints ── */
 
-/** GET /portal/sessions — list participant's sessions grouped by project */
 app.get("/portal/sessions", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -808,7 +755,6 @@ app.get("/portal/sessions", async (req, res) => {
   const offset = parseInt(req.query.offset) || 0;
 
   try {
-    // Session summaries with pagination
     const [rows] = await bigquery.query({
       query: `SELECT project_path, session_id,
                      MIN(timestamp) AS first_timestamp,
@@ -828,7 +774,6 @@ app.get("/portal/sessions", async (req, res) => {
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
 
-    // Read titles from Firestore cache (single batched RPC)
     const titles = {};
     if (pageRows.length > 0) {
       const titleRefs = pageRows.map((r) => firestore.doc(`session_titles/${email}/${r.session_id}/meta`));
@@ -868,7 +813,6 @@ app.get("/portal/sessions", async (req, res) => {
   }
 });
 
-/** GET /portal/consent — get research-use consent state */
 app.get("/portal/consent", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -885,7 +829,6 @@ app.get("/portal/consent", async (req, res) => {
   });
 });
 
-/** POST /portal/consent — toggle research-use consent */
 app.post("/portal/consent", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -917,13 +860,11 @@ app.post("/portal/consent", async (req, res) => {
       const anonId = await resolveAnonId(email);
       if (anonId) {
         if (!research_use) {
-          // Opt-out: flag all research rows as revoked
           await bigquery.query({
             query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = true WHERE anon_id = @anon_id`,
             params: { anon_id: anonId },
           });
         } else {
-          // Opt-in: restore previously revoked rows (skip for first-time users)
           if (existing.research_use === false) {
             await bigquery.query({
               query: `UPDATE \`${PROJECT_ID}.${DATASET}.${RESEARCH_TABLE}\` SET revoked = false WHERE anon_id = @anon_id`,
@@ -931,7 +872,6 @@ app.post("/portal/consent", async (req, res) => {
             });
           }
 
-          // Backfill: copy course.logs rows not yet in research.logs
           const consentedAt = update.consented_at || existing.consented_at;
           const sinceDate = consentedAt instanceof Date ? consentedAt : consentedAt?.toDate?.() || new Date(0);
 
@@ -971,7 +911,6 @@ app.post("/portal/consent", async (req, res) => {
   res.json({ status: "ok", research_use, ...(backfill_count > 0 && { backfill_count }) });
 });
 
-/** GET /portal/survey — get survey status and any existing responses */
 app.get("/portal/survey", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -979,7 +918,6 @@ app.get("/portal/survey", async (req, res) => {
   const surveyIds = ["pre_course", "mid_course", "post_course"];
   const unlocked = await getUnlockedSurveys();
 
-  // Fetch all responses in parallel (single batched read)
   const unlockedIds = surveyIds.filter((id) => unlocked.includes(id));
   const refs = unlockedIds.map((id) => firestore.doc(`survey_responses/${email}/${id}/data`));
   const docs = refs.length > 0 ? await firestore.getAll(...refs) : [];
@@ -1008,7 +946,6 @@ app.get("/portal/survey", async (req, res) => {
   res.json({ surveys });
 });
 
-/** POST /portal/survey — submit or update survey responses */
 app.post("/portal/survey", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1051,7 +988,6 @@ app.post("/portal/survey", async (req, res) => {
   res.json({ status: "ok", survey_id, survey_status: update.status });
 });
 
-/** POST /portal/consent/sign — sign the consent form (locks it) */
 app.post("/portal/consent/sign", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1066,7 +1002,6 @@ app.post("/portal/consent/sign", async (req, res) => {
   const { consent_html, research_use } = req.body;
   const signedAt = new Date();
 
-  // Generate archival HTML document
   const archiveHtml = `<!DOCTYPE html>
 <html><head><title>Informed Consent — Agent Logs</title>
 <style>
@@ -1113,7 +1048,6 @@ app.post("/portal/consent/sign", async (req, res) => {
   res.json({ status: "ok", signed_at: signedAt.toISOString() });
 });
 
-/** GET /portal/consent/pdf — download the signed consent form */
 app.get("/portal/consent/pdf", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1128,7 +1062,6 @@ app.get("/portal/consent/pdf", async (req, res) => {
   res.send(html);
 });
 
-/** POST /portal/survey/sign — sign a completed survey (locks it) */
 app.post("/portal/survey/sign", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1149,7 +1082,6 @@ app.post("/portal/survey/sign", async (req, res) => {
   res.json({ status: "ok", signed_at: new Date().toISOString() });
 });
 
-/** POST /portal/revoke — toggle revoked flag on session data */
 app.post("/portal/revoke", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1171,7 +1103,6 @@ app.post("/portal/revoke", async (req, res) => {
       params: { ...params, revoked },
     });
 
-    // Cascade to research.logs
     if (SEALED_MAPPING_KEY) {
       try {
         const anonId = await resolveAnonId(email);
@@ -1200,7 +1131,6 @@ app.post("/portal/revoke", async (req, res) => {
   }
 });
 
-/** POST /portal/delete-request — request data deletion */
 app.post("/portal/delete-request", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1221,7 +1151,6 @@ app.post("/portal/delete-request", async (req, res) => {
   res.json({ status: "ok", request_id: ref.id, state: "pending" });
 });
 
-/** GET /portal/delete-requests — list participant's delete requests */
 app.get("/portal/delete-requests", async (req, res) => {
   const email = requireAuth(req, res);
   if (!email) return;
@@ -1240,10 +1169,7 @@ app.get("/portal/delete-requests", async (req, res) => {
   res.json({ requests });
 });
 
-/* ── OTLP ingestion (Claude Code & Cowork telemetry) ── */
-// Accepts OTLP HTTP/JSON logs/events from Claude Code and Cowork.
-// Events: user_prompt, tool_result, api_request, api_error, tool_decision
-// Future: Compliance API will be another data source once Enterprise upgrade completes.
+/* ── OTLP ingestion ── */
 
 function parseOtlpAttributes(attrs) {
   const result = {};
@@ -1254,11 +1180,6 @@ function parseOtlpAttributes(attrs) {
   return result;
 }
 
-/**
- * POST /v1/logs — OTLP HTTP/JSON logs endpoint
- * Receives OpenTelemetry log records from Claude Code/Cowork.
- * Auth via Bearer token in OTLP headers (shared secret).
- */
 app.post("/v1/logs", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== `Bearer ${OTLP_SECRET}`) {
@@ -1306,17 +1227,14 @@ app.post("/v1/logs", async (req, res) => {
   }
 });
 
-/** POST /v1/traces — accept but no-op (traces not stored yet) */
 app.post("/v1/traces", (req, res) => {
   res.json({ partialSuccess: {} });
 });
 
-/** POST /v1/metrics — accept but no-op (metrics not stored yet) */
 app.post("/v1/metrics", (req, res) => {
   res.json({ partialSuccess: {} });
 });
 
-/** Health check */
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });

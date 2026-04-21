@@ -8,7 +8,6 @@ import { getToken } from "./auth.js";
 const CLAUDE_DIR = join(homedir(), ".claude", "projects");
 import { INGESTION_URL } from "./constants.js";
 
-/** Record types that are synced */
 export const ALLOWED_TYPES = new Set([
   "user",
   "assistant",
@@ -21,11 +20,6 @@ export const ALLOWED_TYPES = new Set([
   "permission-mode",
 ]);
 
-/**
- * Strip tool_result content blocks from a parsed record.
- * Retains stub with tool_use_id and type, drops content field.
- * Preserves toolUseResult metadata (status, duration, size) but drops content.
- */
 export function stripToolResults(record) {
   if (record.message?.content && Array.isArray(record.message.content)) {
     record.message.content = record.message.content.map((block) => {
@@ -41,7 +35,6 @@ export function stripToolResults(record) {
     for (const key of keep) {
       if (record.toolUseResult[key] !== undefined) meta[key] = record.toolUseResult[key];
     }
-    // Preserve size signals from content fields without exposing content
     if (typeof record.toolUseResult.stdout === "string") meta.stdout_length = record.toolUseResult.stdout.length;
     if (typeof record.toolUseResult.stderr === "string") meta.stderr_length = record.toolUseResult.stderr.length;
     if (typeof record.toolUseResult.result === "string") meta.result_length = record.toolUseResult.result.length;
@@ -52,22 +45,16 @@ export function stripToolResults(record) {
   return record;
 }
 
-/**
- * Convert a filesystem path to Claude Code's project directory name.
- * e.g. /home/tanaka/projects/my-project -> -home-tanaka-projects-my-project
- */
 export function pathToProjectDir(fsPath) {
   return fsPath.replace(/\//g, "-").replace(/^-/, "-");
 }
 
-/** Compute tail hash from a buffer (SHA-256 of last 1024 bytes before offset). */
 export function tailHash(buf, offset) {
   if (offset <= 0) return null;
   const start = Math.max(0, offset - 1024);
   return createHash("sha256").update(buf.subarray(start, offset)).digest("hex");
 }
 
-/** Read a slice of a file into a Buffer (offset to EOF, plus tail bytes for hash). */
 export function readFileSlice(filePath, cursorOffset, fileSize) {
   const tailStart = Math.max(0, cursorOffset - 1024);
   const length = fileSize - tailStart;
@@ -81,9 +68,6 @@ export function readFileSlice(filePath, cursorOffset, fileSize) {
   return { buf, tailStart };
 }
 
-/**
- * Discover all JSONL files for a project directory, including subagent files.
- */
 export function discoverJsonlFiles(claudeProjectDir) {
   const files = [];
   if (!existsSync(claudeProjectDir)) return files;
@@ -91,12 +75,10 @@ export function discoverJsonlFiles(claudeProjectDir) {
   for (const entry of readdirSync(claudeProjectDir)) {
     const full = join(claudeProjectDir, entry);
 
-    // Main session file: {session-id}.jsonl
     if (entry.endsWith(".jsonl")) {
       files.push({ absolute: full, relative: entry });
     }
 
-    // Subagent directory: {session-id}/subagents/
     const subagentDir = join(full, "subagents");
     if (existsSync(subagentDir)) {
       try {
@@ -108,16 +90,12 @@ export function discoverJsonlFiles(claudeProjectDir) {
           }
         }
       } catch {
-        // Permission or read error on subagent dir -- skip
       }
     }
   }
   return files;
 }
 
-/**
- * Sync all shared projects. Called by Stop, SubagentStop, and SessionEnd hooks.
- */
 export async function sync() {
   const projects = readProjects();
   if (!projects.participant_id) {
@@ -155,13 +133,10 @@ export async function sync() {
       const cursor = cursors[cursorKey] || { offset: 0 };
       const fileSize = statSync(filePath).size;
 
-      // Nothing new
       if (fileSize <= cursor.offset) continue;
 
-      // Single read: tail bytes (for hash check) + new bytes (for sync)
       const { buf, tailStart } = readFileSlice(filePath, cursor.offset, fileSize);
 
-      // Validate continuity
       if (fileSize < cursor.offset) {
         cursor.offset = 0;
         cursor.tail_hash = null;
@@ -173,16 +148,13 @@ export async function sync() {
         }
       }
 
-      // Extract new text from cursor to EOF
       const newStart = cursor.offset - tailStart;
       const newText = buf.subarray(newStart).toString("utf8");
 
-      // Truncate at last complete line
       const lastNewline = newText.lastIndexOf("\n");
       if (lastNewline === -1) continue;
       const completeText = newText.slice(0, lastNewline + 1);
 
-      // Filter and strip lines
       const filteredLines = [];
       for (const line of completeText.split("\n")) {
         if (!line.trim()) continue;
@@ -208,13 +180,10 @@ export async function sync() {
         continue;
       }
 
-      // Raw file offset after the complete text we consumed
       const newFileOffset = cursor.offset + Buffer.byteLength(completeText, "utf8");
 
-      // Extract session ID from file path
       const sessionId = relPath.split("/")[0].replace(".jsonl", "");
 
-      // POST to ingestion endpoint
       try {
         const resp = await fetch(`${INGESTION_URL}/ingest`, {
           method: "POST",

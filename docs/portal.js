@@ -1,9 +1,4 @@
-// Agent Logs — Participant Portal
-// Single-page app: auth, dashboard, consent, survey, sessions
-
 const API = "https://agent-logs-ingestion-321175301732.asia-northeast1.run.app";
-
-// ── Language helpers (getLang, setLang, toggleLang loaded from lang.js) ──
 
 /** Pick EN or JA string */
 function t(en, ja) {
@@ -52,7 +47,6 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// ── Sign & PDF Export ──
 
 function showSignModal(title, onConfirm) {
   const overlay = document.createElement("div");
@@ -107,7 +101,6 @@ function exportPDF(title, contentHtml) {
     win.document.close();
     win.print();
   } else {
-    // Safari blocks window.open in some contexts — fall back to blob download
     const blob = new Blob([html], { type: "text/html" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -117,7 +110,6 @@ function exportPDF(title, contentHtml) {
   }
 }
 
-// ── Auth ──
 
 function getToken() {
   const token = localStorage.getItem("agent_logs_token");
@@ -152,7 +144,6 @@ async function apiFetch(path, opts = {}) {
   return data;
 }
 
-// ── Init ──
 
 document.addEventListener("DOMContentLoaded", () => {
   const auth = getToken();
@@ -188,18 +179,15 @@ function showPortal(email) {
   loadConsent();
 }
 
-// ── Login flow ──
 
 function setupLogin() {
   const sendBtn = document.getElementById("login-send-btn");
   const verifyBtn = document.getElementById("login-verify-btn");
   const emailInput = document.getElementById("login-email");
 
-  // Auto-fill and send if email provided via query param (from CLI consent-required screen)
   const urlEmail = new URLSearchParams(window.location.search).get("email");
   if (urlEmail && !getToken()) {
     emailInput.value = urlEmail;
-    // Clean URL without reloading
     history.replaceState(null, "", window.location.pathname);
     setTimeout(() => sendBtn.click(), 100);
   }
@@ -233,7 +221,6 @@ function setupLogin() {
       document.getElementById("login-step-code").style.display = "";
       document.getElementById("login-code-msg").textContent =
         `Verification code sent to ${email}`;
-      // Store email for verify step
       verifyBtn.dataset.email = email;
       document.getElementById("login-code").focus();
     } catch (err) {
@@ -244,7 +231,6 @@ function setupLogin() {
     }
   });
 
-  // Auto-submit when 6 digits entered, Enter key also submits
   const codeInput = document.getElementById("login-code");
   codeInput.addEventListener("input", () => {
     if (codeInput.value.trim().length === 6) verifyBtn.click();
@@ -280,7 +266,6 @@ function setupLogin() {
   });
 }
 
-// ── Tabs ──
 
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
@@ -291,7 +276,6 @@ function setupTabs() {
       document.querySelectorAll("[id^='tab-']").forEach((s) => {
         s.style.display = s.id === `tab-${tabId}` ? "" : "none";
       });
-      // Load data when switching tabs
       if (tabId === "dashboard") loadDashboard();
       if (tabId === "sessions") loadSessions();
       if (tabId === "consent") loadConsent();
@@ -300,7 +284,6 @@ function setupTabs() {
   });
 }
 
-// ── Dashboard ──
 
 async function loadDashboard() {
   const container = document.getElementById("dashboard-cards");
@@ -314,7 +297,6 @@ async function loadDashboard() {
   `;
 }
 
-// ── Sessions ──
 
 let sessionsOffset = 0;
 let allSessionProjects = {};
@@ -337,7 +319,6 @@ async function loadSessions(append = false) {
       return;
     }
 
-    // Merge into existing project groups
     for (const project of data.projects) {
       if (!allSessionProjects[project.project_path]) {
         allSessionProjects[project.project_path] = [];
@@ -400,7 +381,6 @@ function renderSessions(container, hasMore) {
   });
 }
 
-// ── Consent ──
 
 let consentSigned = false;
 
@@ -415,18 +395,15 @@ async function loadConsent() {
     const isSigned = !!data.signed_at;
     if (isSigned) consentSigned = true;
 
-    // Educational-use toggle — on by default for unsigned
     eduToggle.checked = true;
     if (isSigned) {
       eduToggle.disabled = true;
       eduToggle.closest(".consent-toggle-row").classList.add("disabled");
     } else {
-      // Clone to remove stale listeners
       const newEdu = eduToggle.cloneNode(true);
       eduToggle.parentNode.replaceChild(newEdu, eduToggle);
     }
 
-    // Research-use toggle — always active, can be changed anytime
     resToggle.checked = isSigned ? data.research_use : true;
     const newRes = resToggle.cloneNode(true);
     resToggle.parentNode.replaceChild(newRes, resToggle);
@@ -505,7 +482,6 @@ async function loadConsent() {
   }
 }
 
-// ── Survey ──
 
 async function loadSurvey() {
   const container = document.getElementById("survey-container");
@@ -515,12 +491,9 @@ async function loadSurvey() {
     const data = await apiFetch("/portal/survey");
     const preStudy = data.surveys.pre_course;
 
-    // Determine which survey to show the form for
-    // Priority: URL hash > first editable (not signed, not locked)
     let activeSurveyId = null;
     let activeSurvey = null;
 
-    // Check if a specific survey was requested via onclick
     const requested = container.dataset.requestedSurvey;
     if (requested && data.surveys[requested] && !data.surveys[requested].signed_at && data.surveys[requested].status !== "locked") {
       activeSurveyId = requested;
@@ -577,14 +550,12 @@ async function loadSurvey() {
     const responses = activeSurvey.responses || {};
     container.innerHTML = `<div style="margin-bottom:24px">${statusHtml}</div>${signButtons}` + renderSurveyForm(activeSurveyId, responses);
 
-    // Auto-save on change
     let saveTimeout;
     container.addEventListener("change", () => {
       clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => saveSurvey(false), 2000);
     });
 
-    // Submit button
     document.getElementById("survey-submit")?.addEventListener("click", () => saveSurvey(true));
     document.getElementById("survey-save")?.addEventListener("click", () => saveSurvey(false));
   } catch (err) {
@@ -626,7 +597,6 @@ function validateSurvey(surveyId) {
   for (const section of sections) {
     for (const q of section.questions) {
       if (q.type === "vignette") {
-        // Vignette has 3 sub-parts: _a (likert), _b (text), _c (text)
         if (!form.querySelector(`[name="${q.id}_a"]:checked`)) missing.push({ section: section.id, question: q.id + "_a" });
         const bVal = form.querySelector(`[name="${q.id}_b"]`)?.value?.trim();
         if (!bVal) missing.push({ section: section.id, question: q.id + "_b" });
@@ -641,7 +611,6 @@ function validateSurvey(surveyId) {
           if (!val) missing.push({ section: section.id, question: `${q.id}_${ci}` });
         }
       }
-      // checkbox is optional (can select none)
     }
   }
   return missing;
@@ -659,7 +628,6 @@ async function saveSurvey(completed) {
     if (missing.length > 0) {
       const sections = [...new Set(missing.map((m) => m.section))];
       alert(`Please complete all questions before submitting.\n\nMissing responses in: ${sections.join(", ")}`);
-      // Scroll to first missing question
       const firstMissing = form.querySelector(`[name="${missing[0].question}"]`);
       if (firstMissing) firstMissing.closest(".survey-question")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -672,8 +640,6 @@ async function saveSurvey(completed) {
       body: { survey_id: surveyId, responses, completed },
     });
     if (completed) {
-      // Re-render so the Sign button is visible if the user cancels the modal,
-      // then immediately prompt to sign — avoids a two-step reveal.
       await loadSurvey();
       window.signSurvey(surveyId);
     }
@@ -816,13 +782,11 @@ window.toggleRevoke = async function(projectPath, sessionId, revoked, btn) {
       body: { project_path: projectPath, session_id: sessionId, revoked },
     });
 
-    // Update local state
     for (const sessions of Object.values(allSessionProjects)) {
       const s = sessions.find((s) => s.session_id === sessionId);
       if (s) { s.revoked = revoked; break; }
     }
 
-    // Update row in-place
     const row = btn.closest(".session-row");
     if (revoked) {
       row.classList.add("session-revoked");
@@ -857,7 +821,6 @@ window.openSurvey = function(surveyId) {
   loadSurvey();
 };
 
-// Global handlers for survey sign/export (called from onclick in rendered HTML)
 window.signSurvey = function(surveyId) {
   const label = surveyLabel(surveyId);
   showSignModal(`${t("Sign", "署名")} ${label} ${t("Survey", "アンケート")}`, async () => {
@@ -876,12 +839,11 @@ window.exportSurveyPDF = async function(surveyId) {
     const responses = survey.responses;
     const sections = getSurveySections(surveyId);
 
-    // Build HTML with questions and answers
     let html = "";
     for (const section of sections) {
       html += `<h2>${section.id}. ${escapeHtml(section.title)}</h2>`;
       for (const q of section.questions) {
-        const qText = q.text.split(" / ")[0]; // English only for PDF
+        const qText = q.text.split(" / ")[0];
         if (q.type === "vignette") {
           html += `<p style="margin:12px 0 4px"><strong>${escapeHtml(qText)}</strong></p>`;
           html += `<table>`;
