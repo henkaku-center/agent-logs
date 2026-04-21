@@ -299,6 +299,16 @@ switch (command) {
       shared = true;
     }
 
+    // Repair: if a folder was auto-shared with consented_at > signed_at
+    // (from the v0.3.4 bug), backdate to signed_at so historical records sync.
+    if (shared && projects.signed_at) {
+      const entry = projects.shared.find((s) => s.path === hookCwd);
+      if (entry && entry.consented_at > projects.signed_at) {
+        entry.consented_at = projects.signed_at;
+        writeProjects(projects);
+      }
+    }
+
     const status = shared ? "shared" : withdrawn ? "not shared" : "unknown";
 
     // stdout → injected into Claude's context
