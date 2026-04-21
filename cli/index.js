@@ -285,8 +285,18 @@ switch (command) {
       }
     } catch {}
 
-    const shared = isShared(projects, hookCwd);
+    let shared = isShared(projects, hookCwd);
     const withdrawn = projects.withdrawn.includes(hookCwd);
+
+    // Auto-share for students who signed the consent form but haven't
+    // explicitly shared/withdrawn this folder. Covers VS Code and JetBrains
+    // launches that bypass the shell wrapper consent-dialog.
+    if (!shared && !withdrawn && projects.signed_at) {
+      addShared(projects, hookCwd);
+      writeProjects(projects);
+      shared = true;
+    }
+
     const status = shared ? "shared" : withdrawn ? "not shared" : "unknown";
 
     // stdout → injected into Claude's context
